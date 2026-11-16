@@ -1,0 +1,169 @@
+# iOS builds on GitHub's Macs, so the app never needs a Mac of our own. Shrink is native SwiftUI,
+# and XcodeGen makes the Xcode project from ios/project.yml.
+#
+# test        every push that touches the app, and every TestFlight tag: generates the project, runs the
+#             encoding tests on an iPhone simulator, opens the app and saves screenshots
+#             (Actions run > Artifacts > ios-results).
+# testflight  a pushed tag named ios-* (or "Run workflow" with TestFlight ticked): signs the app and
+#             uploads it to TestFlight. Needs the ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 secrets (an
+#             App Store Connect Team key with Admin access) and IOS_DIST_KEY, which
+#             `node scripts/ios-signing.mjs setup` puts there.
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'shared/**'
+      - 'scripts/ios-signing.mjs'
+      - '.github/workflows/ios.yml'
+    tags: ['ios-*']
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload this build to TestFlight
+        type: boolean
+        default: false
+
+# A newer push to main replaces an older build still running. TestFlight tags are never cancelled.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Pick an iPhone simulator
+        id: sim
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | node -e '
+            const all = Object.values(JSON.parse(require("fs").readFileSync(0, "utf8")).devices).flat()
+            const phones = all.filter(d => /^iPhone \d+ Pro$/.test(d.name)).sort((a, b) => b.name.localeCompare(a.name, "en", { numeric: true }))
+            console.log((phones[0] || all.find(d => d.name.startsWith("iPhone"))).udid)')
+          echo "udid=$DEVICE" >> "$GITHUB_OUTPUT"
+
+      - name: Run the encoding tests
+        run: |
+          set -o pipefail
+          mkdir -p results
+          xcodebuild -version
+          xcodebuild test -project ios/Shrink.xcodeproj -scheme Shrink \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build \
+            -resultBundlePath results/tests.xcresult CODE_SIGNING_ALLOWED=NO \
+            | tee results/test-log.txt | grep -E "error:|warning: .*Shrink|Test Case .*(passed|failed)|Executed|TEST (SUCCEEDED|FAILED)|BUILD (SUCCEEDED|FAILED)"
+
+      - name: Open the app and take screenshots
+        if: always()
+        run: |
+          DEVICE=${{ steps.sim.outputs.udid }}
+          APP=build/Build/Products/Debug-iphonesimulator/Shrink.app
+          [ -d "$APP" ] || { echo "No app was built"; exit 0; }
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl status_bar "$DEVICE" override --time 9:41 --batteryState charged --batteryLevel 100
+          xcrun simctl install "$DEVICE" "$APP"
+          xcrun simctl launch "$DEVICE" com.useshrink.app
+          sleep 5 && xcrun simctl io "$DEVICE" screenshot results/1-home.png
+          xcrun simctl spawn "$DEVICE" log show --last 2m --predicate 'process == "Shrink"' --style compact > results/app-log.txt || true
+          xcrun simctl shutdown "$DEVICE" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-results
+          path: results/
+
+  testflight:
+    if: ${{ startsWith(github.ref, 'refs/tags/ios-') || (github.event_name == 'workflow_dispatch' && inputs.testflight) }}
+    # One Mac at a time: it only uploads a build whose tests just passed.
+    needs: test
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      IOS_DIST_KEY: ${{ secrets.IOS_DIST_KEY }}
+    steps:
+      - run: |
+          echo "SIGNING_DIR=$RUNNER_TEMP/signing" >> "$GITHUB_ENV"
+          echo "KEYCHAIN=$RUNNER_TEMP/build.keychain-db" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Get the signing certificate and App Store profile
+        id: signing
+        run: node scripts/ios-signing.mjs create "$SIGNING_DIR"
+
+      - name: Put them where Xcode looks
+        run: |
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$SIGNING_DIR/dist.p12" -P "$(cat "$SIGNING_DIR/p12-password")" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+            mkdir -p "$d" && cp "$SIGNING_DIR/App_Store.mobileprovision" "$d/${{ steps.signing.outputs.profile_uuid }}.mobileprovision"
+          done
+
+      - name: Archive
+        run: |
+          # Build numbers only have to go up: the UTC minute does that without any bookkeeping.
+          BUILD_NUMBER=$(date -u +%y%m%d%H%M)
+          echo "Build $BUILD_NUMBER"
+          xcodebuild -project ios/Shrink.xcodeproj -scheme Shrink -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Shrink.xcarchive" \
+            SHRINK_PROVISIONING_PROFILE="${{ steps.signing.outputs.profile_name }}" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" -quiet archive
+
+      - name: Export the .ipa
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>8L2P8U42YK</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.useshrink.app</key><string>${{ steps.signing.outputs.profile_name }}</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Shrink.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export"
+          ls -la "$RUNNER_TEMP/export"
+
+      - name: Upload to TestFlight
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8
+          xcrun altool --upload-app -f "$RUNNER_TEMP/export/Shrink.ipa" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Remove the signing files from this Mac
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+          rm -rf "$SIGNING_DIR" ~/.appstoreconnect/private_keys

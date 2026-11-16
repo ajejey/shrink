@@ -1,0 +1,77 @@
+# A screen recording of the app doing a real job on an iPhone simulator, to watch it work without an
+# iPhone. Run by hand when a good chunk is done, not on every push:
+#   gh workflow run ios-demo.yml --repo ajejey/shrink
+# then download it: gh run download <run id> --repo ajejey/shrink -n ios-demo -D demo/
+name: iOS demo video
+
+on:
+  workflow_dispatch:
+
+jobs:
+  demo:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: brew install xcodegen ffmpeg
+
+      - name: Generate the Xcode project
+        run: cd ios && xcodegen generate
+
+      # 20 seconds of 1080p with sound at a steady 24 Mbps: about 60 MB, too big for Discord's 20 MB.
+      - name: Make a demo video
+        run: |
+          mkdir -p media demo
+          ffmpeg -hide_banner -loglevel error \
+            -f lavfi -i "mandelbrot=s=1920x1080:r=30" -f lavfi -i "sine=frequency=330:sample_rate=48000" -t 20 \
+            -c:v libx264 -b:v 24M -minrate 24M -maxrate 24M -bufsize 24M -x264-params nal-hrd=cbr \
+            -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart media/Demo-video.mp4
+          ls -la media
+
+      - name: Pick and boot an iPhone simulator, add the video to its Photos
+        id: sim
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | node -e '
+            const all = Object.values(JSON.parse(require("fs").readFileSync(0, "utf8")).devices).flat()
+            const phones = all.filter(d => /^iPhone \d+ Pro$/.test(d.name)).sort((a, b) => b.name.localeCompare(a.name, "en", { numeric: true }))
+            console.log((phones[0] || all.find(d => d.name.startsWith("iPhone"))).udid)')
+          echo "udid=$DEVICE" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl status_bar "$DEVICE" override --time 9:41 --batteryState charged --batteryLevel 100
+          xcrun simctl addmedia "$DEVICE" media/Demo-video.mp4
+
+      - name: Build the app and the demo test
+        run: |
+          xcodebuild build-for-testing -project ios/Shrink.xcodeproj -scheme ShrinkDemo \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build \
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= -quiet
+
+      - name: Record the app doing the job
+        run: |
+          DEVICE=${{ steps.sim.outputs.udid }}
+          xcrun simctl io "$DEVICE" recordVideo --codec=h264 --force demo/full-recording.mp4 &
+          RECORDER=$!
+          sleep 3
+          set +e
+          xcodebuild test-without-building -project ios/Shrink.xcodeproj -scheme ShrinkDemo \
+            -destination "id=$DEVICE" -derivedDataPath build -resultBundlePath demo/demo.xcresult \
+            CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= > demo/test-log.txt 2>&1
+          STATUS=$?
+          sleep 2
+          kill -INT $RECORDER
+          wait $RECORDER
+          grep -E "Test Case|error:|Tapping picker item|TEST (SUCCEEDED|FAILED)" demo/test-log.txt || true
+          # No automatic trim: the recording's timeline doesn't follow the wall clock (it skips still
+          # stretches), so a clock-based cut started mid-shrink in run 43858737386. Cut it locally
+          # from the scene changes instead (see NEXT.md).
+          ls -la demo
+          exit $STATUS
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-demo
+          path: demo/

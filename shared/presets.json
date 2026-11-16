@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "checked": "2026-11-16",
+  "presets": [
+    {
+      "id": "discord",
+      "title": "Compress for Discord",
+      "limitBytes": 20000000,
+      "limitLabel": "20 MB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Free accounts. Discord's File Attachments FAQ: 'For non-Nitro subscribers, the maximum file upload is 20MB' and 'As of August 2026, the free upload limit is 20MB (up from 10MB)'. Confirmed by Discord Patch Notes, Sept 8 2026 (discord.com/blog/discord-patch-notes-september-8-2026). The size is now checked before compression on desktop and mobile, so the file we hand over is what counts. Nitro Basic: 50MB. Nitro: up to 1GB (raised from 500MB in 2026, per the same FAQ and discord.com/nitro). Discord also says it is experimenting with limits and some users may get larger ones. Server Boost Level 2/3 servers allow 50MB/100MB for all members (per the Account Caps article). That Account Caps article (support.discord.com/hc/en-us/articles/33694251638295) still lists 10MB / 50MB / 500MB and is out of date. The source does not define MB; decimal used (20,000,000 bytes).",
+      "source": "https://support.discord.com/hc/en-us/articles/25444343291031-File-Attachments-FAQ",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "gmail",
+      "title": "Make it fit in an email (Gmail)",
+      "limitBytes": 25000000,
+      "limitLabel": "25 MB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Personal Gmail accounts: 'the limit is 25 MB'. It is the total of all attachments in one email, not per file. Over the limit, Gmail removes the attachment and puts in a Google Drive link instead. Work and school (Google Workspace) accounts: the admin sets the limit. Google's Workspace page lists 25 MB for Business, Education and Enterprise Standard, and up to 50 MB for Enterprise Plus (Gmail on the web only), and says these are limits on the total message content and attachments before encoding (knowledge.workspace.google.com/admin/gmail/gmail-sending-limits-in-google-workspace). The source does not define MB; decimal used (25,000,000 bytes).",
+      "source": "https://support.google.com/mail/answer/6584?hl=en&co=GENIE.Platform%3DDesktop",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "outlook",
+      "title": "Make it fit in an email (Outlook)",
+      "limitBytes": 20000000,
+      "limitLabel": "20 MB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Shrink uses 20 MB (20,000,000 bytes) so the file also fits classic desktop Outlook's 20 MB default (decided 2026-11-16); Outlook.com alone allows 25 MB. Outlook.com: 'The attachment size limit for files is 25 MB.' Larger files can be shared from OneDrive (up to 2GB). Classic desktop Outlook differs: Outlook 2013 and later default to 20 MB (20480 KB, about 20,971,520 bytes) total attachments for POP3/IMAP/HTTP internet email accounts, which is lower than 25 MB; an on-premises Exchange mailbox defaults to 10 MB (10240 KB) (learn.microsoft.com/en-us/troubleshoot/outlook/message-body/attachment-size-exceeds-the-allowable-limit-error). Microsoft 365 work/school mailboxes (Exchange Online): default maximum message size is 35 MB to send and 36 MB to receive, admins can set 1 MB to 150 MB, messages leaving Microsoft add about 33% encoding, Outlook on the web caps sends 25% below the configured limit, and Outlook for iOS/Android has a 33 MB message size limit (learn.microsoft.com/en-us/office365/servicedescriptions/exchange-online-service-description/exchange-online-limits). The source does not define MB; decimal used (25,000,000 bytes).",
+      "source": "https://support.microsoft.com/en-us/outlook/sending-limits-in-outlook-com",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "whatsapp",
+      "title": "Send on WhatsApp",
+      "limitBytes": 64000000,
+      "limitLabel": "64 MB",
+      "media": ["video"],
+      "confidence": "high",
+      "notes": "Video sent as media. WhatsApp's help page (same text for iPhone, Android and desktop): 'For users with a faster internet connection, the default video size limit is 100MB and 720p resolution' and 'For users with a slower internet connection, the default video size limit is 64MB and 480p resolution.' We use 64 MB so it fits on any connection; 100 MB works on faster connections. WhatsApp may still compress media; the sender can pick Standard or HD quality. Sent as a document (no compression): 'For documents, the maximum file size allowed is 2 GB.' The page states no size limit for photos. Status videos: 90 seconds max. The source does not define MB; decimal used (64,000,000 bytes).",
+      "source": "https://faq.whatsapp.com/453914586839706/?cms_platform=iphone",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "imessage",
+      "title": "Send in a text message (iMessage)",
+      "limitBytes": 100000000,
+      "limitLabel": "100 MB",
+      "media": ["video", "photo"],
+      "confidence": "low",
+      "notes": "Apple does not publish an iMessage size limit. Apple's support page (published June 18, 2026) only says that for SMS/MMS 'your carrier may set size limits for attachments' and that iPhone can compress photo and video attachments when necessary. The 100 MB figure comes from an Apple Support Community Specialist reply (discussions.apple.com/thread/252822623, June 2021), not from Apple documentation. Other reports conflict: an Apple Developer Forums user measured about 25MB in 2017 (developer.apple.com/forums/thread/79813), and a user there reported sending about 1.5GB in January 2024. Messages may compress video anyway. MMS (green-bubble texts to non-iMessage phones) limits are set by each carrier and are not covered by this number. Decimal used (100,000,000 bytes).",
+      "source": "https://support.apple.com/en-us/118433",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "canvas",
+      "title": "Upload to Canvas",
+      "limitBytes": 500000000,
+      "limitLabel": "500 MB",
+      "media": ["video"],
+      "confidence": "medium",
+      "notes": "Instructure's Canvas File Quotas document: Media (audio/video) files 500 MB; Canvas Files 5 GB max file size. The media submission guide says 'Canvas will not accept media uploads larger than 500 MB' (community.instructure.com/en/kb/articles/661213). A video sent through a File Upload assignment can be up to 5 GB, but 500 MB works for both the Media and File Upload submission routes and is the size Canvas converts for in-browser playback. Instructure says the file upload size limits cannot be modified, so schools do not change the 500 MB / 5 GB limits. What schools do change: storage quotas (defaults: course 500 MB, user 50 MB, group 50 MB; admins can change them), and instructors choose which submission types an assignment allows. Graded assignment submissions do not count against the student's user quota. Schools that use a separate video tool inside Canvas may have different limits. Photos fall under the 5 GB file limit. The source does not define MB; decimal used (500,000,000 bytes).",
+      "source": "https://community.instructure.com/en/instructure/kb/articles/387061-canvas-file-quotas",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "google-forms",
+      "title": "Upload to a Google Form",
+      "limitBytes": 10000000,
+      "limitLabel": "10 MB",
+      "media": ["video", "photo"],
+      "confidence": "low",
+      "notes": "The form owner picks the limit. Google's help confirms the owner can set a maximum file size per file, a maximum number of files, and a maximum total size for all files collected, but no Google page lists the actual choices. Google's Forms API defines maxFileSize in bytes. Google's 2017 Workspace Updates post says total uploads to new forms are capped at 1GB by default, with an option to raise it to 1TB. The per-file choices (1 MB up to 10 GB) and 10 MB as the usual setting come only from third-party guides, not Google, so they are unverified. The app should let the user choose the limit the form shows. Responders must sign in to a Google Account; the question type is unavailable for forms in a shared drive or when the admin turns on Data Loss Prevention. Decimal used (10,000,000 bytes).",
+      "source": "https://support.google.com/docs/answer/7322334?hl=en",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "under-10mb",
+      "title": "Under 10 MB",
+      "limitBytes": 10000000,
+      "limitLabel": "10 MB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Generic size target, no platform. Decimal MB (10,000,000 bytes), which is under both readings of 10 MB.",
+      "source": null,
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "under-25mb",
+      "title": "Under 25 MB",
+      "limitBytes": 25000000,
+      "limitLabel": "25 MB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Generic size target, no platform. Decimal MB (25,000,000 bytes), which is under both readings of 25 MB.",
+      "source": null,
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "under-50mb",
+      "title": "Under 50 MB",
+      "limitBytes": 50000000,
+      "limitLabel": "50 MB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Generic size target, no platform. Decimal MB (50,000,000 bytes), which is under both readings of 50 MB.",
+      "source": null,
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "slack",
+      "title": "Send on Slack",
+      "limitBytes": 1000000000,
+      "limitLabel": "1 GB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Slack help: 'Members and guests can add files up to 1 GB in size.' Up to ten files per message. The source does not define GB; decimal used (1,000,000,000 bytes).",
+      "source": "https://slack.com/help/articles/201330736-Add-files-to-Slack",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "telegram",
+      "title": "Send on Telegram",
+      "limitBytes": 2000000000,
+      "limitLabel": "2 GB",
+      "media": ["video", "photo"],
+      "confidence": "high",
+      "notes": "Telegram FAQ: files of any type 'up to 2 GB in size each (or 4 GB with Premium)'. The source does not define GB; decimal used (2,000,000,000 bytes).",
+      "source": "https://telegram.org/faq",
+      "checked": "2026-11-16"
+    },
+    {
+      "id": "messenger",
+      "title": "Send on Messenger",
+      "limitBytes": 25000000,
+      "limitLabel": "25 MB",
+      "media": ["photo"],
+      "confidence": "high",
+      "notes": "Messenger help: 'You can send photos, voice messages, GIFs, stickers or AI stickers of up to 25 MB in file size in your Messenger chats.' The page does not state a limit for videos, so this preset is photos only. The source does not define MB; decimal used (25,000,000 bytes).",
+      "source": "https://www.messenger.com/help/messenger-app/141024792690630/?locale=en_GB",
+      "checked": "2026-11-16"
+    }
+  ]
+}
