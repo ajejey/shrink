@@ -9,7 +9,7 @@ struct ShrinkJobView: View {
         NavigationStack {
             Group {
                 if case .choosing(let video) = job.phase {
-                    TrimView(video: video, targetBytes: job.targetBytes, limitLabel: job.limitLabel) { part in
+                    TrimView(video: video, targetBytes: job.targetBytes ?? 0, limitLabel: job.limitLabel) { part in
                         job.shrink(part: part)
                     }
                 } else {
@@ -43,8 +43,14 @@ struct ShrinkJobView: View {
             case .opening, .choosing:
                 ProgressView()
                     .controlSize(.large)
-                Text("Opening the video…")
+                Text(job.kind == .photo ? "Opening the photo…" : "Opening the video…")
                     .font(.title3)
+            case .shrinking where job.kind == .photo:
+                // Photos take a second or two: no percentage to follow.
+                ProgressView()
+                    .controlSize(.large)
+                Text(job.targetBytes == nil ? "Making it a JPG…" : "Shrinking your photo…")
+                    .font(.title2.bold())
             case .shrinking(let value):
                 Text("Shrinking your video")
                     .font(.title2.bold())

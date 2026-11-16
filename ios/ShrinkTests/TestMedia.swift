@@ -143,9 +143,9 @@ enum TestMedia {
         return sample
     }
 
-    /// A photo: gradient with a band of noise, saved as JPEG with GPS and an EXIF orientation of 6
-    /// (stored sideways, shown upright as portrait).
-    static func makePhoto(width: Int, height: Int) throws -> URL {
+    /// A photo: gradient with a band of noise, saved as JPEG (or HEIC, like an iPhone's) with GPS and
+    /// an EXIF orientation of 6 (stored sideways, shown upright as portrait).
+    static func makePhoto(width: Int, height: Int, type: UTType = .jpeg) throws -> URL {
         let bytesPerRow = width * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
         pixels.withUnsafeMutableBytes { arc4random_buf($0.baseAddress!, $0.count) }
@@ -165,8 +165,10 @@ enum TestMedia {
             bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
         )!
-        let url = temporaryURL("jpg")
-        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
+        let url = temporaryURL(type.preferredFilenameExtension ?? "jpg")
+        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
+            throw XCTSkip("This simulator can't write \(type.identifier) files")
+        }
         let gps: [CFString: Any] = [
             kCGImagePropertyGPSLatitude: 37.3349, kCGImagePropertyGPSLatitudeRef: "N",
             kCGImagePropertyGPSLongitude: 122.0090, kCGImagePropertyGPSLongitudeRef: "W",

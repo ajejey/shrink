@@ -2,6 +2,7 @@ import AVFoundation
 import PhotosUI
 import ShrinkCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// One shrink, from picking a video to a file ready to send:
 /// opening → choosing the part to send (trim) → shrinking → done (or failed).
@@ -23,13 +24,17 @@ final class ShrinkJob {
         let originalBytes: Int64?
     }
 
+    enum Kind { case video, photo }
+
     var phase: Phase = .opening
     var isShowing = false
+    var kind: Kind = .video
     /// The job in the person's words: "Compress for Discord".
     var title = ""
-    /// "20 MB", shown on the trim screen and with the result.
+    /// "20 MB", shown on the trim screen and with the result. nil when there's no limit (JPG only).
     var limitLabel: String?
-    var targetBytes: Int64 = 0
+    /// nil when there's no limit (convert a photo to JPG).
+    var targetBytes: Int64?
     var removeLocation = true
     private var picked: PickedVideo?
     private var task: Task<Void, Never>?
@@ -42,10 +47,20 @@ final class ShrinkJob {
         }
     }
 
-    /// Opens the picked video and shows the trim screen.
-    func open(item: PhotosPickerItem, preset: Preset, removeLocation: Bool) {
-        guard let limit = preset.limitBytes else { return }
-        reset(title: preset.title, limitLabel: preset.limitLabel, targetBytes: limit, removeLocation: removeLocation)
+    /// Opens what was picked: a video goes to the trim screen, a photo is shrunk straight away.
+    func open(item: PhotosPickerItem, destination: Destination, removeLocation: Bool) {
+        let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+        reset(title: destination.title, limitLabel: destination.limitLabel, targetBytes: destination.limitBytes,
+              removeLocation: removeLocation)
+        if !isVideo {
+            kind = .photo
+            shrinkPhoto(item)
+            return
+        }
+        guard destination.limitBytes != nil else {
+            phase = .failed("This one makes photos into JPGs. To shrink a video, pick where it's going instead.")
+            return
+        }
         task = Task {
             do {
                 guard let movie = try await item.loadTransferable(type: PickedMovie.self) else {
@@ -66,7 +81,7 @@ final class ShrinkJob {
 
     /// Shrinks the part the person picked on the trim screen.
     func shrink(part: ClosedRange<Double>) {
-        guard let picked else { return }
+        guard let picked, let targetBytes else { return }
         task?.cancel()
         phase = .shrinking(0)
         let range = CMTimeRange(
@@ -107,7 +122,7 @@ final class ShrinkJob {
 
     // MARK: - Steps
 
-    private func reset(title: String, limitLabel: String?, targetBytes: Int64, removeLocation: Bool) {
+    private func reset(title: String, limitLabel: String?, targetBytes: Int64?, removeLocation: Bool) {
         task?.cancel()
         removePicked()
         Self.removeOldResults()
@@ -115,8 +130,38 @@ final class ShrinkJob {
         self.limitLabel = limitLabel
         self.targetBytes = targetBytes
         self.removeLocation = removeLocation
+        kind = .video
         phase = .opening
         isShowing = true
+    }
+
+    /// A photo: copied out of Photos, made into a JPEG under the limit (any HEIC becomes JPG).
+    private func shrinkPhoto(_ item: PhotosPickerItem) {
+        let targetBytes = targetBytes, removeLocation = removeLocation
+        task = Task {
+            do {
+                guard let photo = try await item.loadTransferable(type: PickedPhoto.self) else {
+                    throw ShrinkError.couldNotRead("Couldn't open that photo.")
+                }
+                defer { try? FileManager.default.removeItem(at: photo.url) }
+                try Task.checkCancellation()
+                phase = .shrinking(0)
+                let originalBytes = Self.fileSize(photo.url)
+                let output = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("Shrink-\(UUID().uuidString.prefix(6)).jpg")
+                // PhotoShrinker works synchronously; keep it off the main thread.
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try PhotoShrinker.shrink(imageAt: photo.url, to: output, targetBytes: targetBytes,
+                                             removeLocation: removeLocation)
+                }.value
+                try Task.checkCancellation()
+                phase = .done(Finished(url: result.url, bytes: result.bytes,
+                                       originalBytes: originalBytes > 0 ? originalBytes : nil))
+            } catch is CancellationError {
+            } catch {
+                phase = .failed(error.localizedDescription)
+            }
+        }
     }
 
     /// Reads what the trim screen needs to know about the video, then shows it.
@@ -137,11 +182,16 @@ final class ShrinkJob {
         picked = nil
     }
 
+    private static func fileSize(_ url: URL) -> Int64 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
     /// Finished files from earlier jobs. Kept until the next job so a share in progress never loses its file.
     private static func removeOldResults() {
         let folder = FileManager.default.temporaryDirectory
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        for name in names where name.hasPrefix("Shrink-") && name.hasSuffix(".mp4") {
+        for name in names where name.hasPrefix("Shrink-") && (name.hasSuffix(".mp4") || name.hasSuffix(".jpg")) {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
         }
     }
@@ -207,6 +257,23 @@ struct PickedVideo {
     /// Copies the Photos picker hands us are named picked-… (see PickedMovie).
     static func isOurCopy(_ url: URL) -> Bool {
         url.lastPathComponent.hasPrefix("picked-")
+    }
+}
+
+/// A photo handed over by the Photos picker (HEIC, JPEG, PNG…), copied somewhere we can read it.
+struct PickedPhoto: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(contentType: .image) { photo in
+            SentTransferredFile(photo.url)
+        } importing: { received in
+            let copy = FileManager.default.temporaryDirectory
+                .appendingPathComponent("picked-\(UUID().uuidString)")
+                .appendingPathExtension(received.file.pathExtension)
+            try FileManager.default.copyItem(at: received.file, to: copy)
+            return PickedPhoto(url: copy)
+        }
     }
 }
 

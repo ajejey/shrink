@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-public struct PhotoShrinkResult {
+public struct PhotoShrinkResult: Sendable {
     public let url: URL
     public let bytes: Int64
     public let pixelWidth: Int
@@ -32,7 +32,6 @@ public enum PhotoShrinker {
 
         let metadata = keptProperties(properties, removeLocation: removeLocation)
         var longSide = max(width, height)
-        var smallestTried: Int64 = 0
 
         while true {
             guard let image = render(imageSource, longSide: longSide) else {
@@ -47,13 +46,14 @@ public enum PhotoShrinker {
                     url: output, bytes: Int64(data.count),
                     pixelWidth: image.width, pixelHeight: image.height, quality: quality
                 )
-            case .tooBig(let bytes):
-                smallestTried = bytes
+            case .tooBig:
+                break
             case .failed:
                 throw ShrinkError.couldNotWrite("The JPEG encoder failed.")
             }
             let next = Int(Double(longSide) * 0.8)
-            guard next >= smallestLongSide else { throw ShrinkError.stillTooBig(bytes: smallestTried) }
+            // ("Trim it shorter", the video advice, means nothing for a photo.)
+            guard next >= smallestLongSide else { throw ShrinkError.limitTooSmall }
             longSide = next
         }
     }
