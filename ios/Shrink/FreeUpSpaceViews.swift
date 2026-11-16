@@ -8,7 +8,7 @@ import UIKit
 struct FreeUpSpaceCard: View {
     let model: FreeUpSpace
     let onOpen: () -> Void
-    var store: Store = .shared
+    private var store: Store { .shared }
     @Environment(\.openURL) private var openURL
     @State private var showPro = false
 
@@ -129,7 +129,7 @@ struct FreeUpSpaceCard: View {
 
 /// "Free allowance: 3.2 GB of 5 GB left".
 struct AllowanceBar: View {
-    var store: Store = .shared
+    private var store: Store { .shared }
 
     var body: some View {
         if store.isPro {

@@ -14,11 +14,14 @@ struct HomeView: View {
     @State private var recents = RecentPlaces.load()
     @State private var freeUp: FreeUpSpace
     @State private var showFreeUp = false
+    private let router = ShortcutRouter.shared
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
 
-    init(freeUp: FreeUpSpace = FreeUpSpace()) {
-        _freeUp = State(initialValue: freeUp)
+    /// `freeUp` is a frozen copy for CI screenshots; the app makes its own.
+    @MainActor
+    init(freeUp: FreeUpSpace? = nil) {
+        _freeUp = State(initialValue: freeUp ?? FreeUpSpace())
     }
 
     var body: some View {
@@ -71,6 +74,7 @@ struct HomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await freeUp.refreshAndScanIfNeeded() } }
         }
+        .onChange(of: router.request, initial: true) { _, _ in openShortcut() }
         .onChange(of: freeUp.requestsHome) { _, goHome in
             guard goHome else { return }
             freeUp.requestsHome = false
@@ -98,6 +102,18 @@ struct HomeView: View {
     private func pick(_ destination: Destination) {
         chosen = destination
         showPicker = true
+    }
+
+    /// Siri or Spotlight asked for a job: open its screen.
+    private func openShortcut() {
+        guard let request = router.request else { return }
+        router.request = nil
+        switch request {
+        case .send(let id):
+            if let destination = Destination.find(id: id) { pick(destination) }
+        case .freeUp:
+            showFreeUp = true
+        }
     }
 
     /// Runs once the job screen has fully closed, so the next screen never opens over a closing one.

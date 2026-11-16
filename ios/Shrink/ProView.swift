@@ -4,7 +4,9 @@ import SwiftUI
 /// "Free up all the space": Shrink Pro. Shown before a batch that needs it, from Home, and from Settings.
 /// Never after the work is done, never over a finished file.
 struct ProView: View {
-    var store: Store = .shared
+    /// A frozen store for CI screenshots; nil uses the real one.
+    var preview: Store? = nil
+    private var store: Store { preview ?? .shared }
     @Environment(\.dismiss) private var dismiss
     @State private var choice = Store.lifetimeID
     @State private var showPrivacy = false

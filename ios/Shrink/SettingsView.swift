@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Settings: Pro, the location switch, help and privacy.
 struct SettingsView: View {
-    var store: Store = .shared
+    private var store: Store { .shared }
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AppSettings.removeLocationKey, store: AppSettings.defaults) private var removeLocation = true
     @State private var showPro = false

@@ -24,7 +24,7 @@ struct ShrinkApp: App {
             case "freeup-over"?:
                 NavigationStack { FreeUpSpaceScreen(model: .preview(pickAll: true)) }
             case "pro"?:
-                ProView(store: .preview())
+                ProView(preview: .preview())
             case "freeup-working"?, "freeup-done"?, "freeup-kept"?, "freeup-full"?:
                 FreeUpSpaceRunView(model: .previewRun(screenshot ?? ""))
             case "places"?:

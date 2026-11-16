@@ -81,7 +81,7 @@ jobs:
           for state in trim shrinking done failed places settings freeup-home freeup-intro freeup-pick freeup-check freeup-working freeup-done freeup-kept freeup-full freeup-over pro; do
             xcrun simctl terminate "$DEVICE" com.useshrink.app || true
             xcrun simctl launch "$DEVICE" com.useshrink.app -screenshot "$state"
-            sleep 4 && xcrun simctl io "$DEVICE" screenshot "results/$n-$state.png"
+            sleep 6 && xcrun simctl io "$DEVICE" screenshot "results/$n-$state.png"
             n=$((n + 1))
           done
           # The home screen, to see the app icon.
