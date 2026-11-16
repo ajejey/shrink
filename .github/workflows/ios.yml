@@ -74,6 +74,17 @@ jobs:
           xcrun simctl install "$DEVICE" "$APP"
           xcrun simctl launch "$DEVICE" com.useshrink.app
           sleep 5 && xcrun simctl io "$DEVICE" screenshot results/1-home.png
+          # Each screen of a job, frozen by the app's -screenshot argument (no real video needed).
+          n=2
+          for state in shrinking done failed; do
+            xcrun simctl terminate "$DEVICE" com.useshrink.app || true
+            xcrun simctl launch "$DEVICE" com.useshrink.app -screenshot "$state"
+            sleep 3 && xcrun simctl io "$DEVICE" screenshot "results/$n-$state.png"
+            n=$((n + 1))
+          done
+          # The home screen, to see the app icon.
+          xcrun simctl terminate "$DEVICE" com.useshrink.app || true
+          sleep 1 && xcrun simctl io "$DEVICE" screenshot results/$n-icon-on-home-screen.png
           xcrun simctl spawn "$DEVICE" log show --last 2m --predicate 'process == "Shrink"' --style compact > results/app-log.txt || true
           xcrun simctl shutdown "$DEVICE" || true
 

@@ -55,6 +55,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.useshrink.app
         PRODUCT_NAME: Shrink
         TARGETED_DEVICE_FAMILY: "1"
+        # Shrink/Assets.xcassets; the icon is drawn by scripts/make-app-icon.py.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         Release:
           PROVISIONING_PROFILE_SPECIFIER: $(SHRINK_PROVISIONING_PROFILE)

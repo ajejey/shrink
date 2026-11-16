@@ -47,9 +47,11 @@ struct HomeView: View {
             .onChange(of: pickedItem) { _, item in
                 guard let item, let preset = chosen, let limit = preset.limitBytes else { return }
                 pickedItem = nil
-                job.start(item: item, targetBytes: limit, title: preset.title, removeLocation: removeLocation)
+                job.start(item: item, targetBytes: limit, title: preset.title, limitLabel: preset.limitLabel,
+                          removeLocation: removeLocation)
             }
-            .sheet(isPresented: $job.isShowing) {
+            // A full, solid screen: the first demo's half sheet let the destination list show through.
+            .fullScreenCover(isPresented: $job.isShowing) {
                 ShrinkJobView(job: job)
             }
         }
@@ -63,18 +65,36 @@ final class ShrinkJob {
     enum Phase {
         case opening
         case shrinking(Double)
-        case done(VideoShrinkResult)
+        case done(Finished)
         case failed(String)
+    }
+
+    /// The shrunk file, ready to share.
+    struct Finished {
+        let url: URL
+        let bytes: Int64
+        let originalBytes: Int64?
     }
 
     var phase: Phase = .opening
     var isShowing = false
     var title = ""
+    /// "20 MB", shown with the result so the person sees it fits.
+    var limitLabel: String?
     private var task: Task<Void, Never>?
 
-    func start(item: PhotosPickerItem, targetBytes: Int64, title: String, removeLocation: Bool) {
+    /// Finished one way or the other: the button says "Done" instead of "Cancel".
+    var isFinished: Bool {
+        switch phase {
+        case .done, .failed: return true
+        case .opening, .shrinking: return false
+        }
+    }
+
+    func start(item: PhotosPickerItem, targetBytes: Int64, title: String, limitLabel: String?, removeLocation: Bool) {
         task?.cancel()
         self.title = title
+        self.limitLabel = limitLabel
         phase = .opening
         isShowing = true
         task = Task {
@@ -96,7 +116,7 @@ final class ShrinkJob {
                         self.phase = .shrinking(value)
                     }
                 }
-                phase = .done(result)
+                phase = .done(Finished(url: result.url, bytes: result.bytes, originalBytes: result.originalBytes))
             } catch ShrinkError.cancelled {
                 // Closed by the person; nothing to show.
             } catch is CancellationError {
@@ -110,59 +130,115 @@ final class ShrinkJob {
         task?.cancel()
         isShowing = false
     }
+
+    /// A job frozen in one state, for CI screenshots (`-screenshot shrinking|done|failed`).
+    static func preview(_ state: String) -> ShrinkJob {
+        let job = ShrinkJob()
+        job.title = "Compress for Discord"
+        job.limitLabel = "20 MB"
+        job.isShowing = true
+        switch state {
+        case "done":
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("Shrink-preview.mp4")
+            job.phase = .done(Finished(url: url, bytes: 19_040_000, originalBytes: 61_500_000))
+        case "failed":
+            job.phase = .failed("Couldn't open that video.")
+        default:
+            job.phase = .shrinking(0.62)
+        }
+        return job
+    }
 }
 
+/// The whole screen while a video shrinks, then the result with the button to send it.
 struct ShrinkJobView: View {
     let job: ShrinkJob
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
+                Spacer()
                 switch job.phase {
                 case .opening:
-                    ProgressView("Opening the video…")
+                    ProgressView()
+                        .controlSize(.large)
+                    Text("Opening the video…")
+                        .font(.title3)
                 case .shrinking(let value):
-                    ProgressView(value: value) {
-                        Text("Shrinking…")
-                    } currentValueLabel: {
-                        Text("\(Int(value * 100))%")
-                    }
-                case .done(let result):
-                    Text("Ready to send")
-                        .font(.title.bold())
-                    Text(sizeLine(result))
+                    Text("Shrinking your video")
+                        .font(.title2.bold())
+                    Text("\(Int(value * 100))%")
+                        .font(.system(size: 72, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.default, value: Int(value * 100))
+                    ProgressView(value: value)
+                        .scaleEffect(x: 1, y: 3, anchor: .center)
+                        .padding(.horizontal, 8)
+                    Text("Keep Shrink open until it's done.")
+                        .font(.body)
                         .foregroundStyle(.secondary)
-                    ShareLink(item: result.url) {
-                        Label("Send it", systemImage: "square.and.arrow.up")
-                            .frame(maxWidth: .infinity)
+                        .padding(.top, 8)
+                case .done(let result):
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 72))
+                        .foregroundStyle(.green)
+                    Text("Ready to send")
+                        .font(.largeTitle.bold())
+                    VStack(spacing: 6) {
+                        Text(sizeLine(result))
+                            .font(.title3)
+                        if let limit = job.limitLabel {
+                            Text("Under the \(limit) limit")
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
                 case .failed(let message):
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.orange)
                     Text("Couldn't shrink this one")
                         .font(.title2.bold())
                     Text(message)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
                 }
+                Spacer()
+                if case .done(let result) = job.phase {
+                    ShareLink(item: result.url) {
+                        Label("Send it", systemImage: "square.and.arrow.up")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
             }
             .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(.systemBackground))
             .navigationTitle(job.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { job.close() }
+                if job.isFinished {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { job.close() }
+                    }
+                }
+                if !job.isFinished {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { job.close() }
+                    }
                 }
             }
         }
-        .interactiveDismissDisabled()
-        .presentationDetents([.medium])
     }
 
-    private func sizeLine(_ result: VideoShrinkResult) -> String {
-        let now = ByteCountFormatter.string(fromByteCount: result.bytes, countStyle: .file)
+    /// "19.0 MB, was 61.5 MB": both sizes written the same way.
+    private func sizeLine(_ result: ShrinkJob.Finished) -> String {
+        let now = SizeFormat.string(result.bytes)
         guard let original = result.originalBytes, original > 0 else { return now }
-        return "\(now) (was \(ByteCountFormatter.string(fromByteCount: original, countStyle: .file)))"
+        return "\(now), was \(SizeFormat.string(original))"
     }
 }
 
