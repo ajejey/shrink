@@ -35,9 +35,11 @@ targets:
   Shrink:
     type: application
     platform: iOS
-    sources: [Shrink]
+    # ShrinkUI: the screens the app shares with the share sheet extension.
+    sources: [Shrink, ShrinkUI]
     dependencies:
       - target: ShrinkCore
+      - target: ShrinkShare
     info:
       path: Shrink/Info.plist
       properties:
@@ -61,6 +63,38 @@ targets:
       configs:
         Release:
           PROVISIONING_PROFILE_SPECIFIER: $(SHRINK_PROVISIONING_PROFILE)
+
+  # "Shrink" in the share sheet (Photos, WhatsApp, Files…): the same job without opening the app.
+  # Needs its own App ID and App Store profile (com.useshrink.app.share) before a TestFlight build.
+  ShrinkShare:
+    type: app-extension
+    platform: iOS
+    sources: [ShrinkShare, ShrinkUI]
+    dependencies:
+      - target: ShrinkCore
+    info:
+      path: ShrinkShare/Info.plist
+      properties:
+        CFBundleDisplayName: Shrink
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            # One video or one photo at a time.
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsMovieWithMaxCount: 1
+              NSExtensionActivationSupportsImageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.useshrink.app.share
+        PRODUCT_NAME: ShrinkShare
+        TARGETED_DEVICE_FAMILY: "1"
+        APPLICATION_EXTENSION_API_ONLY: YES
+      configs:
+        Release:
+          PROVISIONING_PROFILE_SPECIFIER: $(SHRINK_SHARE_PROVISIONING_PROFILE)
 
   # Encoding checks on the simulator: size under target, plays, sound kept, rotation, duration.
   ShrinkTests:

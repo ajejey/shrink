@@ -47,32 +47,52 @@ final class ShrinkJob {
         }
     }
 
-    /// Opens what was picked: a video goes to the trim screen, a photo is shrunk straight away.
+    /// From the app: what was picked in Photos. A video goes to the trim screen, a photo is shrunk straight away.
     func open(item: PhotosPickerItem, destination: Destination, removeLocation: Bool) {
         let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+        start(isVideo: isVideo, destination: destination, removeLocation: removeLocation) {
+            let url: URL?
+            if isVideo {
+                url = try await item.loadTransferable(type: PickedMovie.self)?.url
+            } else {
+                url = try await item.loadTransferable(type: PickedPhoto.self)?.url
+            }
+            guard let url else {
+                throw ShrinkError.couldNotRead(isVideo ? "Couldn't open that video." : "Couldn't open that photo.")
+            }
+            return url
+        }
+    }
+
+    /// From the share sheet: a file it already copied somewhere we can read it (and removes itself).
+    func open(url: URL, isVideo: Bool, destination: Destination, removeLocation: Bool) {
+        start(isVideo: isVideo, destination: destination, removeLocation: removeLocation) { url }
+    }
+
+    private func start(isVideo: Bool, destination: Destination, removeLocation: Bool,
+                       file: @escaping () async throws -> URL) {
         reset(title: destination.title, limitLabel: destination.limitLabel, targetBytes: destination.limitBytes,
               removeLocation: removeLocation)
-        if !isVideo {
-            kind = .photo
-            shrinkPhoto(item)
-            return
-        }
-        guard destination.limitBytes != nil else {
+        kind = isVideo ? .video : .photo
+        if isVideo, destination.limitBytes == nil {
             phase = .failed("This one makes photos into JPGs. To shrink a video, pick where it's going instead.")
             return
         }
         task = Task {
             do {
-                guard let movie = try await item.loadTransferable(type: PickedMovie.self) else {
-                    throw ShrinkError.couldNotRead("Couldn't open that video.")
-                }
+                let url = try await file()
                 if Task.isCancelled {
                     // Cancelled while Photos was still handing it over: don't leave the copy behind.
-                    try? FileManager.default.removeItem(at: movie.url)
+                    if PickedVideo.isOurCopy(url) { try? FileManager.default.removeItem(at: url) }
                     return
                 }
-                try await choose(url: movie.url)
+                if isVideo {
+                    try await choose(url: url)
+                } else {
+                    try await shrinkPhoto(at: url)
+                }
             } catch is CancellationError {
+            } catch ShrinkError.cancelled {
             } catch {
                 phase = .failed(error.localizedDescription)
             }
@@ -135,33 +155,20 @@ final class ShrinkJob {
         isShowing = true
     }
 
-    /// A photo: copied out of Photos, made into a JPEG under the limit (any HEIC becomes JPG).
-    private func shrinkPhoto(_ item: PhotosPickerItem) {
+    /// A photo made into a JPEG under the limit (any HEIC becomes JPG).
+    private func shrinkPhoto(at url: URL) async throws {
+        defer { if PickedVideo.isOurCopy(url) { try? FileManager.default.removeItem(at: url) } }
+        phase = .shrinking(0)
+        let originalBytes = Self.fileSize(url)
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Shrink-\(UUID().uuidString.prefix(6)).jpg")
         let targetBytes = targetBytes, removeLocation = removeLocation
-        task = Task {
-            do {
-                guard let photo = try await item.loadTransferable(type: PickedPhoto.self) else {
-                    throw ShrinkError.couldNotRead("Couldn't open that photo.")
-                }
-                defer { try? FileManager.default.removeItem(at: photo.url) }
-                try Task.checkCancellation()
-                phase = .shrinking(0)
-                let originalBytes = Self.fileSize(photo.url)
-                let output = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("Shrink-\(UUID().uuidString.prefix(6)).jpg")
-                // PhotoShrinker works synchronously; keep it off the main thread.
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try PhotoShrinker.shrink(imageAt: photo.url, to: output, targetBytes: targetBytes,
-                                             removeLocation: removeLocation)
-                }.value
-                try Task.checkCancellation()
-                phase = .done(Finished(url: result.url, bytes: result.bytes,
-                                       originalBytes: originalBytes > 0 ? originalBytes : nil))
-            } catch is CancellationError {
-            } catch {
-                phase = .failed(error.localizedDescription)
-            }
-        }
+        // PhotoShrinker works synchronously; keep it off the main thread.
+        let result = try await Task.detached(priority: .userInitiated) {
+            try PhotoShrinker.shrink(imageAt: url, to: output, targetBytes: targetBytes, removeLocation: removeLocation)
+        }.value
+        try Task.checkCancellation()
+        phase = .done(Finished(url: result.url, bytes: result.bytes, originalBytes: originalBytes > 0 ? originalBytes : nil))
     }
 
     /// Reads what the trim screen needs to know about the video, then shows it.

@@ -47,11 +47,11 @@ struct TrimView: View {
                 .font(.title2.bold())
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            // Exactly the video's shape (no black bars), at most 300 tall so portrait videos fit too.
             VideoPlayer(player: player)
                 .aspectRatio(video.aspectRatio, contentMode: .fit)
-                .frame(maxWidth: .infinity, maxHeight: 300)
-                .background(Color.black)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                .frame(maxHeight: 300)
 
             TrimBar(duration: video.duration, start: $start, end: $end, frames: frames)
                 .frame(height: 56)
@@ -107,14 +107,12 @@ struct TrimView: View {
     /// Whether the picked part fits, in plain words, with what to do when it doesn't.
     @ViewBuilder private var fitLine: some View {
         if !fits {
-            Label("Too long for \(limit). Make it shorter than \(Clock.string(longestThatFits)).",
-                  systemImage: "xmark.circle.fill")
-                .foregroundStyle(.red)
+            status("Too long for \(limit). Make it shorter than \(Clock.string(longestThatFits)).",
+                   icon: "xmark.circle.fill", color: .red)
         } else if length > longestThatLooksSharp {
             VStack(alignment: .leading, spacing: 4) {
-                Label("Fits under \(limit), but it will look soft. Under \(Clock.string(longestThatLooksSharp)) stays sharp.",
-                      systemImage: "exclamationmark.circle.fill")
-                    .foregroundStyle(.orange)
+                status("Fits under \(limit), but it will look soft. Under \(Clock.string(longestThatLooksSharp)) stays sharp.",
+                       icon: "exclamationmark.circle.fill", color: .orange)
                 if startsShortened {
                     Text("The whole video is \(Clock.string(video.duration)), too long for \(limit), so only the start is picked.")
                         .font(.footnote)
@@ -122,8 +120,16 @@ struct TrimView: View {
                 }
             }
         } else {
-            Label("Fits under \(limit) and stays sharp.", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+            status("Fits under \(limit) and stays sharp.", icon: "checkmark.circle.fill", color: .green)
+        }
+    }
+
+    /// The words in the normal text color (readable), the meaning in the icon's color.
+    private func status(_ text: String, icon: String, color: Color) -> some View {
+        Label {
+            Text(text).fontWeight(.medium)
+        } icon: {
+            Image(systemName: icon).foregroundStyle(color)
         }
     }
 
