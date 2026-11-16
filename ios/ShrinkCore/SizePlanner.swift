@@ -58,6 +58,20 @@ public enum SizePlanner {
         return SizePlan(videoBitsPerSecond: video, audioBitsPerSecond: audio, maxLongSide: longSide, maxFrameRate: frameRate)
     }
 
+    /// The longest a video can be and still fit under `targetBytes`: at all (the same floor `plan`
+    /// uses), or looking sharp (decent bitrate at up to 720p, or the source's size if smaller).
+    /// The trim screen uses these to say how long to keep it.
+    public static func longestSeconds(targetBytes: Int64, hasAudio: Bool, sourceLongSide: Int, sharp: Bool) -> Double {
+        guard targetBytes > 0 else { return 0 }
+        let budget = Double(targetBytes) * 8 * safety
+        if !sharp {
+            // The smallest total plan() accepts: the video floor plus the smallest audio.
+            return budget / Double(minimumVideoBitsPerSecond + (hasAudio ? 64_000 : 0))
+        }
+        let video = decentBitsPerSecond(longSide: max(1, min(sourceLongSide, 1280)))
+        return budget / (video + (hasAudio ? 128_000 : 0))
+    }
+
     /// Stereo AAC: 128 kbps normally, less when the whole budget is small.
     static func audioBitsPerSecond(forTotal total: Double) -> Int {
         switch total {

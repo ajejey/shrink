@@ -7,10 +7,13 @@ public enum ShrinkError: LocalizedError, Equatable {
     case couldNotRead(String)
     case couldNotWrite(String)
     case stillTooBig(bytes: Int64)
+    case trimTooShort
     case cancelled
 
     public var errorDescription: String? {
         switch self {
+        case .trimTooShort:
+            return "The part you picked is too short. Drag the ends further apart."
         case .noVideo:
             return "This file has no video in it."
         case .tooLongToFit:

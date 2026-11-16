@@ -8,11 +8,15 @@ public struct VideoShrinkOptions {
     public var removeLocation: Bool
     /// H.264 plays everywhere (Windows, Android, Discord, browsers). HEVC is smaller but less compatible.
     public var codec: AVVideoCodecType
+    /// The part of the video to keep (trim). nil keeps all of it. The finished file starts at 0:00.
+    public var timeRange: CMTimeRange?
 
-    public init(targetBytes: Int64, removeLocation: Bool = true, codec: AVVideoCodecType = .h264) {
+    public init(targetBytes: Int64, removeLocation: Bool = true, codec: AVVideoCodecType = .h264,
+                timeRange: CMTimeRange? = nil) {
         self.targetBytes = targetBytes
         self.removeLocation = removeLocation
         self.codec = codec
+        self.timeRange = timeRange
     }
 }
 
@@ -41,8 +45,11 @@ public final class VideoShrinker {
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         guard let videoTrack = videoTracks.first else { throw ShrinkError.noVideo }
         let audioTrack = try await asset.loadTracks(withMediaType: .audio).first
-        let duration = try await asset.load(.duration).seconds
-        guard duration.isFinite, duration > 0 else { throw ShrinkError.couldNotRead("It has no length.") }
+        let fullDuration = try await asset.load(.duration)
+        guard fullDuration.seconds.isFinite, fullDuration.seconds > 0 else { throw ShrinkError.couldNotRead("It has no length.") }
+        let range = Self.kept(options.timeRange, of: fullDuration)
+        guard range.duration.seconds >= Self.shortestTrimSeconds else { throw ShrinkError.trimTooShort }
+        let duration = range.duration.seconds
 
         let (naturalSize, transform, nominalFrameRate, dataRate) =
             try await videoTrack.load(.naturalSize, .preferredTransform, .nominalFrameRate, .estimatedDataRate)
@@ -71,7 +78,7 @@ public final class VideoShrinker {
             do {
                 try await encode(
                     asset: asset, videoTracks: videoTracks, audioTrack: audioTrack, plan: plan,
-                    outputSize: outputSize, duration: duration, options: options,
+                    outputSize: outputSize, range: range, options: options,
                     includeMetadata: includeMetadata, outputURL: outputURL, progress: progress
                 )
             } catch ShrinkError.couldNotWrite(_) where includeMetadata {
@@ -107,7 +114,7 @@ public final class VideoShrinker {
         audioTrack: AVAssetTrack?,
         plan: SizePlan,
         outputSize: CGSize,
-        duration: Double,
+        range: CMTimeRange,
         options: VideoShrinkOptions,
         includeMetadata: Bool,
         outputURL: URL,
@@ -117,6 +124,10 @@ public final class VideoShrinker {
         do { reader = try AVAssetReader(asset: asset) } catch {
             throw ShrinkError.couldNotRead(error.localizedDescription)
         }
+        // Read only the kept part. Its samples are moved back by range.start so the file starts at 0:00
+        // (plain timestamps instead of an edit list, which some players and sites ignore).
+        reader.timeRange = range
+        let offset = range.start
 
         // Upright frames (rotation baked in), HDR tone-mapped to standard color, frame rate capped.
         let composition = try await AVMutableVideoComposition.videoComposition(withPropertiesOf: asset)
@@ -216,15 +227,16 @@ public final class VideoShrinker {
         }
         writer.startSession(atSourceTime: .zero)
 
-        let reporter = ProgressReporter(duration: duration, report: progress)
+        let reporter = ProgressReporter(duration: range.duration.seconds, report: progress)
         await withTaskCancellationHandler {
             await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
                 let group = DispatchGroup()
-                Self.drain(videoOutput, into: videoInput, reader: reader, group: group, label: "shrink.video") {
+                Self.drain(videoOutput, into: videoInput, reader: reader, offset: offset, group: group, label: "shrink.video") {
                     reporter.update($0)
                 }
                 if let audioOutput, let audioInput {
-                    Self.drain(audioOutput, into: audioInput, reader: reader, group: group, label: "shrink.audio", onSample: nil)
+                    Self.drain(audioOutput, into: audioInput, reader: reader, offset: offset, group: group,
+                               label: "shrink.audio", onSample: nil)
                 }
                 group.notify(queue: .global()) { done.resume() }
             }
@@ -250,11 +262,13 @@ public final class VideoShrinker {
         progress(1)
     }
 
-    /// Moves samples from a reader output to a writer input until the output runs dry.
+    /// Moves samples from a reader output to a writer input until the output runs dry, moving each
+    /// one back by `offset` (the start of a trim).
     private static func drain(
         _ output: AVAssetReaderOutput,
         into input: AVAssetWriterInput,
         reader: AVAssetReader,
+        offset: CMTime,
         group: DispatchGroup,
         label: String,
         onSample: ((CMTime) -> Void)?
@@ -269,7 +283,12 @@ public final class VideoShrinker {
         input.requestMediaDataWhenReady(on: DispatchQueue(label: label)) {
             guard !finished.value else { return }
             while input.isReadyForMoreMediaData {
-                guard reader.status == .reading, let sample = output.copyNextSampleBuffer() else {
+                guard reader.status == .reading, let read = output.copyNextSampleBuffer() else {
+                    finish()
+                    return
+                }
+                guard let sample = shifted(read, back: offset) else {
+                    reader.cancelReading()
                     finish()
                     return
                 }
@@ -284,6 +303,42 @@ public final class VideoShrinker {
     }
 
     // MARK: - Helpers
+
+    /// A trim shorter than this is almost certainly a slip of the finger.
+    public static let shortestTrimSeconds = 0.5
+
+    /// The part of the video to keep: the requested trim, kept inside the video, or all of it.
+    static func kept(_ requested: CMTimeRange?, of duration: CMTime) -> CMTimeRange {
+        let whole = CMTimeRange(start: .zero, duration: duration)
+        guard let requested, requested.isValid, !requested.isIndefinite, !requested.isEmpty else { return whole }
+        return requested.intersection(whole)
+    }
+
+    /// The same sample, `offset` earlier. nil only if Core Media can't copy it.
+    static func shifted(_ sample: CMSampleBuffer, back offset: CMTime) -> CMSampleBuffer? {
+        guard offset.isValid, offset != .zero else { return sample }
+        var count: CMItemCount = 0
+        CMSampleBufferGetSampleTimingInfoArray(sample, entryCount: 0, arrayToFill: nil, entriesNeededOut: &count)
+        guard count > 0 else { return sample }
+        var timing = [CMSampleTimingInfo](repeating: CMSampleTimingInfo(), count: count)
+        guard CMSampleBufferGetSampleTimingInfoArray(
+            sample, entryCount: count, arrayToFill: &timing, entriesNeededOut: &count
+        ) == noErr else { return nil }
+        for index in timing.indices {
+            if timing[index].presentationTimeStamp.isValid {
+                timing[index].presentationTimeStamp = timing[index].presentationTimeStamp - offset
+            }
+            if timing[index].decodeTimeStamp.isValid {
+                timing[index].decodeTimeStamp = timing[index].decodeTimeStamp - offset
+            }
+        }
+        var copy: CMSampleBuffer?
+        guard CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault, sampleBuffer: sample,
+            sampleTimingEntryCount: count, sampleTimingArray: &timing, sampleBufferOut: &copy
+        ) == noErr else { return nil }
+        return copy
+    }
 
     /// Even dimensions with the source's shape, no larger than maxLongSide on the long edge.
     static func outputSize(width: CGFloat, height: CGFloat, maxLongSide: Int) -> CGSize {

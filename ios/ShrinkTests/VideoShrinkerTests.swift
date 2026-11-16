@@ -75,6 +75,51 @@ final class VideoShrinkerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
     }
 
+    // MARK: - Trim
+
+    func testTrimKeepsOnlyThePickedPartAndStartsAtZero() async throws {
+        let source = try TestMedia.makeVideo(width: 1280, height: 720, seconds: 8, fps: 30, audio: true)
+        let output = TestMedia.temporaryURL("mp4")
+        let part = CMTimeRange(start: CMTime(seconds: 2, preferredTimescale: 600), end: CMTime(seconds: 5, preferredTimescale: 600))
+
+        let result = try await VideoShrinker().shrink(
+            asset: AVURLAsset(url: source), to: output, options: .init(targetBytes: 1_000_000, timeRange: part)
+        )
+
+        XCTAssertLessThanOrEqual(result.bytes, 1_000_000)
+        try await assertGood(output, duration: 3, hasAudio: true, portrait: false)
+        let tracks = try await AVURLAsset(url: output).loadTracks(withMediaType: .video)
+        let range = try await XCTUnwrap(tracks.first).load(.timeRange)
+        XCTAssertEqual(range.start.seconds, 0, accuracy: 0.05, "the trimmed file starts at 0:00, with no gap")
+    }
+
+    func testTrimPastTheEndKeepsUpToTheEnd() async throws {
+        let source = try TestMedia.makeVideo(width: 1280, height: 720, seconds: 4, fps: 30, audio: true)
+        let output = TestMedia.temporaryURL("mp4")
+        let part = CMTimeRange(start: CMTime(seconds: 1, preferredTimescale: 600), duration: CMTime(seconds: 60, preferredTimescale: 600))
+
+        _ = try await VideoShrinker().shrink(
+            asset: AVURLAsset(url: source), to: output, options: .init(targetBytes: 1_000_000, timeRange: part)
+        )
+
+        try await assertGood(output, duration: 3, hasAudio: true, portrait: false)
+    }
+
+    func testTooShortATrimSaysSo() async throws {
+        let source = try TestMedia.makeVideo(width: 640, height: 360, seconds: 2, fps: 30, audio: false)
+        let output = TestMedia.temporaryURL("mp4")
+        let part = CMTimeRange(start: CMTime(seconds: 1, preferredTimescale: 600), duration: CMTime(seconds: 0.2, preferredTimescale: 600))
+
+        do {
+            _ = try await VideoShrinker().shrink(
+                asset: AVURLAsset(url: source), to: output, options: .init(targetBytes: 1_000_000, timeRange: part)
+            )
+            XCTFail("expected trimTooShort")
+        } catch let error as ShrinkError {
+            XCTAssertEqual(error, .trimTooShort)
+        }
+    }
+
     // MARK: - Checks
 
     private func assertGood(_ url: URL, duration: Double, hasAudio: Bool, portrait: Bool,

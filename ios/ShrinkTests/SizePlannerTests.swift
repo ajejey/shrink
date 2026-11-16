@@ -77,4 +77,28 @@ final class SizePlannerTests: XCTestCase {
         XCTAssertEqual(Int(odd.width) % 2, 0)
         XCTAssertEqual(Int(odd.height) % 2, 0)
     }
+
+    // MARK: - Trim hints
+
+    func testLongestThatFitsAgreesWithThePlanner() {
+        // The trim screen's "make it shorter than…" must match what the planner will accept.
+        for hasAudio in [true, false] {
+            let longest = SizePlanner.longestSeconds(targetBytes: 20_000_000, hasAudio: hasAudio, sourceLongSide: 1920, sharp: false)
+            XCTAssertNotNil(SizePlanner.plan(targetBytes: 20_000_000, durationSeconds: longest * 0.99, hasAudio: hasAudio,
+                                             sourceLongSide: 1920, sourceFrameRate: 30), "fits just under")
+            XCTAssertNil(SizePlanner.plan(targetBytes: 20_000_000, durationSeconds: longest * 1.01, hasAudio: hasAudio,
+                                          sourceLongSide: 1920, sourceFrameRate: 30), "too long just over")
+        }
+    }
+
+    func testSharpLengthForDiscord() throws {
+        // 20 MB with sound: about a minute and a half stays sharp at 720p.
+        let sharp = SizePlanner.longestSeconds(targetBytes: 20_000_000, hasAudio: true, sourceLongSide: 1920, sharp: true)
+        XCTAssertEqual(sharp, 100, accuracy: 10)
+        let plan = try XCTUnwrap(SizePlanner.plan(targetBytes: 20_000_000, durationSeconds: sharp, hasAudio: true,
+                                                  sourceLongSide: 1920, sourceFrameRate: 30))
+        XCTAssertGreaterThanOrEqual(plan.maxLongSide, 1280, "a video of the sharp length keeps 720p")
+        let watchable = SizePlanner.longestSeconds(targetBytes: 20_000_000, hasAudio: true, sourceLongSide: 1920, sharp: false)
+        XCTAssertGreaterThan(watchable, sharp)
+    }
 }

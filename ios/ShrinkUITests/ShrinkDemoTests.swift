@@ -32,6 +32,12 @@ final class ShrinkDemoTests: XCTestCase {
         pause(1.5)
         XCTAssertEqual(app.state, .runningForeground, "Shrink is still open after picking the video")
 
+        // The trim screen: keep the whole video and shrink it.
+        let shrinkIt = app.buttons["Shrink it"]
+        XCTAssertTrue(shrinkIt.waitForExistence(timeout: 30), "the trim screen opened")
+        pause(2.5)
+        shrinkIt.tap()
+
         // Shrinking, then the result.
         XCTAssertTrue(app.staticTexts["Ready to send"].waitForExistence(timeout: 300), "the video shrank")
         pause(4)
