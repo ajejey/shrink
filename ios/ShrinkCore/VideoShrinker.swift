@@ -264,7 +264,7 @@ public final class VideoShrinker {
 
     /// Moves samples from a reader output to a writer input until the output runs dry, moving each
     /// one back by `offset` (the start of a trim).
-    private static func drain(
+    static func drain(
         _ output: AVAssetReaderOutput,
         into input: AVAssetWriterInput,
         reader: AVAssetReader,
@@ -370,12 +370,12 @@ public final class VideoShrinker {
 }
 
 /// Mutable flag touched only on one serial queue.
-private final class Flag {
+final class Flag {
     var value = false
 }
 
 /// Turns sample times into 0...1 progress, reporting at most once per percent.
-private final class ProgressReporter {
+final class ProgressReporter {
     private let duration: Double
     private let report: (Double) -> Void
     private var last = -1.0

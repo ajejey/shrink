@@ -53,6 +53,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        # Free up space reads the library and saves the smaller copies. Sending uses the Photos
+        # picker, which needs no permission.
+        NSPhotoLibraryUsageDescription: Shrink finds your biggest videos so you can shrink them. Nothing leaves your iPhone.
+        PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIApplicationSceneManifest:

@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct ShrinkApp: App {
-    /// CI opens the app with `-screenshot shrinking` (or trim, done, failed, settings, places) to
+    /// CI opens the app with `-screenshot shrinking` (or trim, done, failed, settings, places, freeup-…) to
     /// photograph each screen without running a real job. A person opening the app never passes it.
     private let screenshot = UserDefaults.standard.string(forKey: "screenshot")
 
@@ -13,6 +13,20 @@ struct ShrinkApp: App {
                 HomeView()
             case "settings"?:
                 SettingsView()
+            case "freeup-home"?:
+                HomeView(freeUp: .preview())
+            case "freeup-intro"?:
+                NavigationStack { FreeUpSpaceScreen(model: .preview(access: .notAsked)) }
+            case "freeup-pick"?:
+                NavigationStack { FreeUpSpaceScreen(model: .preview()) }
+            case "freeup-check"?:
+                NavigationStack { FreeUpSpaceCheck(model: .preview()) }
+            case "freeup-over"?:
+                NavigationStack { FreeUpSpaceScreen(model: .preview(pickAll: true)) }
+            case "pro"?:
+                ProView(store: .preview())
+            case "freeup-working"?, "freeup-done"?, "freeup-kept"?, "freeup-full"?:
+                FreeUpSpaceRunView(model: .previewRun(screenshot ?? ""))
             case "places"?:
                 NavigationStack {
                     DestinationList(kind: nil, showsHeader: false) { _ in }

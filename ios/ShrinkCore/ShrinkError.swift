@@ -10,10 +10,14 @@ public enum ShrinkError: LocalizedError, Equatable {
     case trimTooShort
     /// A photo limit so small that even a small, low-quality copy is over it.
     case limitTooSmall
+    /// Free up space: the copy came out no smaller than the original, so it isn't worth replacing.
+    case notSmaller
     case cancelled
 
     public var errorDescription: String? {
         switch self {
+        case .notSmaller:
+            return "This video is already about as small as it can be. It was left as it is."
         case .limitTooSmall:
             return "That limit is too small for a photo. Even a small, low-quality copy is bigger. Try a bigger limit."
         case .trimTooShort:

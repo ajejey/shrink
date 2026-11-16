@@ -2,7 +2,7 @@ import PhotosUI
 import StoreKit
 import SwiftUI
 
-/// Home: the two jobs, in the person's words. "Send a video or photo" with one-tap places, and (next)
+/// Home: the two jobs, in the person's words. "Send a video or photo" with one-tap places, and
 /// "Free up space". No intro screens: people open the app with a problem, so the job comes first.
 struct HomeView: View {
     @State private var chosen: Destination?
@@ -12,7 +12,14 @@ struct HomeView: View {
     @State private var showPlaces = false
     @State private var showSettings = false
     @State private var recents = RecentPlaces.load()
+    @State private var freeUp: FreeUpSpace
+    @State private var showFreeUp = false
     @Environment(\.requestReview) private var requestReview
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(freeUp: FreeUpSpace = FreeUpSpace()) {
+        _freeUp = State(initialValue: freeUp)
+    }
 
     var body: some View {
         NavigationStack {
@@ -22,6 +29,7 @@ struct HomeView: View {
                              isRecent: !recents.isEmpty,
                              onPick: pick,
                              onAllPlaces: { showPlaces = true })
+                    FreeUpSpaceCard(model: freeUp) { showFreeUp = true }
                     Text("Everything happens on your iPhone. Nothing is uploaded.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -31,6 +39,11 @@ struct HomeView: View {
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
+            // Free up space's progress and result, over everything (on its own view, apart from the job's cover).
+            .fullScreenCover(isPresented: Binding(get: { freeUp.isRunShowing },
+                                                  set: { if !$0 { freeUp.cancelRun() } })) {
+                FreeUpSpaceRunView(model: freeUp)
+            }
             .navigationTitle("Shrink")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -47,6 +60,22 @@ struct HomeView: View {
             .navigationDestination(isPresented: $showPlaces) {
                 PlacesView(onPick: pick)
             }
+            .navigationDestination(isPresented: $showFreeUp) {
+                FreeUpSpaceScreen(model: freeUp)
+            }
+        }
+        .task {
+            await Store.shared.load()
+            await freeUp.refreshAndScanIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await freeUp.refreshAndScanIfNeeded() } }
+        }
+        .onChange(of: freeUp.requestsHome) { _, goHome in
+            guard goHome else { return }
+            freeUp.requestsHome = false
+            showFreeUp = false
+            if freeUp.lastRunFreed > 0, ReviewPrompt.recordSuccess() { requestReview() }
         }
         .photosPicker(isPresented: $showPicker, selection: $pickedItem,
                       matching: chosen?.pickerFilter ?? .videos, preferredItemEncoding: .current)
