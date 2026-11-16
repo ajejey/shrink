@@ -77,7 +77,6 @@ final class ShareModel {
 struct ShareRootView: View {
     let model: ShareModel
     @State private var job = ShrinkJob()
-    @State private var removeLocation = true
 
     var body: some View {
         NavigationStack {
@@ -89,8 +88,10 @@ struct ShareRootView: View {
                         Text("Opening…").font(.title3)
                     }
                 case .ready(let url, let isVideo):
-                    DestinationList(kind: isVideo ? .video : .photo, removeLocation: $removeLocation) { destination in
-                        job.open(url: url, isVideo: isVideo, destination: destination, removeLocation: removeLocation)
+                    DestinationList(kind: isVideo ? .video : .photo) { destination in
+                        // The switch is in the app's Settings (shared through the App Group).
+                        job.open(url: url, isVideo: isVideo, destination: destination,
+                                 removeLocation: AppSettings.removeLocation)
                     }
                 case .failed(let message):
                     VStack(spacing: 16) {

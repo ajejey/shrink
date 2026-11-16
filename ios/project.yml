@@ -40,6 +40,12 @@ targets:
     dependencies:
       - target: ShrinkCore
       - target: ShrinkShare
+    # Shares Settings (the location switch) with the share sheet. Signing must add App Groups to
+    # both App IDs before a TestFlight build.
+    entitlements:
+      path: Shrink/Shrink.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.useshrink.app]
     info:
       path: Shrink/Info.plist
       properties:
@@ -72,6 +78,10 @@ targets:
     sources: [ShrinkShare, ShrinkUI]
     dependencies:
       - target: ShrinkCore
+    entitlements:
+      path: ShrinkShare/ShrinkShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.com.useshrink.app]
     info:
       path: ShrinkShare/Info.plist
       properties:

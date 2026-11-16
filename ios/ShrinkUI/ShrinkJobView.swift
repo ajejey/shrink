@@ -4,6 +4,7 @@ import SwiftUI
 /// The whole screen for one job: pick the part to send, watch it shrink, then send it.
 struct ShrinkJobView: View {
     let job: ShrinkJob
+    @Environment(\.canReportProblem) private var canReportProblem
 
     var body: some View {
         NavigationStack {
@@ -80,6 +81,15 @@ struct ShrinkJobView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if job.removeLocation {
+                    // The location switch lives in Settings now, so say when it did its job.
+                    Label("Location removed", systemImage: "location.slash")
+                        .font(.subheadline)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color(.secondarySystemBackground), in: Capsule())
+                        .padding(.top, 6)
+                }
             case .failed(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 64))
@@ -99,6 +109,31 @@ struct ShrinkJobView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+            }
+            if case .failed(let message) = job.phase {
+                VStack(spacing: 10) {
+                    if job.offersAnother {
+                        Button {
+                            job.pickAnother()
+                        } label: {
+                            Text(job.kind == .photo ? "Pick another photo" : "Pick another video")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                    }
+                    if canReportProblem,
+                       let url = ProblemReport(job: job.jobDescription, problem: message).mailtoURL {
+                        Link(destination: url) {
+                            Text("Report a problem")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                    }
+                }
             }
         }
         .padding(24)

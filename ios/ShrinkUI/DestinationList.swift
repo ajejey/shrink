@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// "Where is it going?": the destinations, "Type your own size limit", "Convert a photo to JPG" and the
-/// location switch. Used by the app's home screen and by the share sheet.
+/// "Where is it going?": the destinations, "Type your own size limit" and "Convert a photo to JPG".
+/// Used by the app's "All places" screen and by the share sheet. The location switch is in Settings.
 struct DestinationList: View {
     enum Kind { case video, photo }
 
     /// What's being shrunk, when it's already known (the share sheet). nil in the app, where the
     /// Photos picker comes after the destination.
     let kind: Kind?
-    @Binding var removeLocation: Bool
+    /// Off where the screen's title already asks "Where is it going?".
+    var showsHeader = true
     let onPick: (Destination) -> Void
 
     @State private var showTypedLimit = false
@@ -24,7 +25,7 @@ struct DestinationList: View {
                     showTypedLimit = true
                 }
             } header: {
-                Text("Where is it going?")
+                if showsHeader { Text("Where is it going?") }
             }
             if kind != .video {
                 Section {
@@ -34,9 +35,6 @@ struct DestinationList: View {
                 } header: {
                     Text("Photos")
                 }
-            }
-            Section {
-                Toggle("Remove location before sharing", isOn: $removeLocation)
             }
         }
         .sheet(isPresented: $showTypedLimit, onDismiss: {

@@ -5,6 +5,8 @@ public struct Preset: Codable, Identifiable, Hashable, Sendable {
     public let id: String
     /// The job in the person's words: "Compress for Discord".
     public let title: String
+    /// The platform's name alone ("Discord"), for buttons with little room. nil falls back to the title.
+    public let short: String?
     public let limitBytes: Int64?
     public let limitLabel: String?
     public let media: [String]?

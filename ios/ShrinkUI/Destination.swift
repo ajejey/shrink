@@ -6,6 +6,8 @@ struct Destination: Identifiable, Hashable {
     let id: String
     /// The job in the person's words: "Compress for Discord".
     let title: String
+    /// The place alone ("Discord", "JPG"), for Home's one-tap buttons.
+    let shortTitle: String
     /// nil means no size limit (converting to JPG only).
     let limitBytes: Int64?
     /// "20 MB", written the way the platform writes its limit.
@@ -16,15 +18,18 @@ struct Destination: Identifiable, Hashable {
     init(preset: Preset) {
         id = preset.id
         title = preset.title
+        shortTitle = preset.short ?? preset.title
         limitBytes = preset.limitBytes
         limitLabel = preset.limitLabel
         takesVideos = preset.appliesToVideo
         takesPhotos = preset.appliesToPhoto
     }
 
-    init(id: String, title: String, limitBytes: Int64?, limitLabel: String?, takesVideos: Bool, takesPhotos: Bool) {
+    init(id: String, title: String, shortTitle: String, limitBytes: Int64?, limitLabel: String?,
+         takesVideos: Bool, takesPhotos: Bool) {
         self.id = id
         self.title = title
+        self.shortTitle = shortTitle
         self.limitBytes = limitBytes
         self.limitLabel = limitLabel
         self.takesVideos = takesVideos
@@ -35,13 +40,19 @@ struct Destination: Identifiable, Hashable {
     static let presets: [Destination] = Presets.all.filter { $0.limitBytes != nil }.map(Destination.init(preset:))
 
     /// HEIC photos from an iPhone, made into JPGs that open on Windows, Android and every website.
-    static let jpg = Destination(id: "jpg", title: "Convert a photo to JPG", limitBytes: nil, limitLabel: nil,
-                                 takesVideos: false, takesPhotos: true)
+    static let jpg = Destination(id: "jpg", title: "Convert a photo to JPG", shortTitle: "JPG", limitBytes: nil,
+                                 limitLabel: nil, takesVideos: false, takesPhotos: true)
 
     /// A limit the person typed, for a form or site that states its own ("Max file size: 2 MB").
     static func typed(_ limit: TypedLimit) -> Destination {
-        Destination(id: "typed-\(limit.bytes)", title: "Under \(limit.label)", limitBytes: limit.bytes,
-                    limitLabel: limit.label, takesVideos: true, takesPhotos: true)
+        Destination(id: "typed-\(limit.bytes)", title: "Under \(limit.label)", shortTitle: "Under \(limit.label)",
+                    limitBytes: limit.bytes, limitLabel: limit.label, takesVideos: true, takesPhotos: true)
+    }
+
+    /// A preset or "Convert a photo to JPG" by its id; nil for typed limits and anything since removed.
+    static func find(id: String) -> Destination? {
+        if id == jpg.id { return jpg }
+        return presets.first { $0.id == id }
     }
 
     /// What the Photos picker shows for this destination.

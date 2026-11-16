@@ -36,6 +36,10 @@ final class ShrinkJob {
     /// nil when there's no limit (convert a photo to JPG).
     var targetBytes: Int64?
     var removeLocation = true
+    /// The app offers "Pick another video" after a failure; the share sheet has only the one file.
+    var offersAnother = false
+    /// Set by "Pick another video": once this screen closes, the app opens the Photos picker again.
+    private(set) var wantsAnother = false
     private var picked: PickedVideo?
     private var task: Task<Void, Never>?
 
@@ -73,6 +77,7 @@ final class ShrinkJob {
                        file: @escaping () async throws -> URL) {
         reset(title: destination.title, limitLabel: destination.limitLabel, targetBytes: destination.limitBytes,
               removeLocation: removeLocation)
+        RecentPlaces.remember(destination)
         kind = isVideo ? .video : .photo
         if isVideo, destination.limitBytes == nil {
             phase = .failed("This one makes photos into JPGs. To shrink a video, pick where it's going instead.")
@@ -140,6 +145,24 @@ final class ShrinkJob {
         removePicked()
     }
 
+    /// After a failure: close, then the app opens the Photos picker again for the same place.
+    func pickAnother() {
+        wantsAnother = true
+        close()
+    }
+
+    /// True once after "Pick another video" (the app reads it when this screen has closed).
+    func takeWantsAnother() -> Bool {
+        defer { wantsAnother = false }
+        return wantsAnother
+    }
+
+    /// "Compress for Discord (20 MB)", for a problem report.
+    var jobDescription: String {
+        guard let limitLabel, !title.contains(limitLabel) else { return title }
+        return "\(title) (\(limitLabel))"
+    }
+
     // MARK: - Steps
 
     private func reset(title: String, limitLabel: String?, targetBytes: Int64?, removeLocation: Bool) {
@@ -150,6 +173,7 @@ final class ShrinkJob {
         self.limitLabel = limitLabel
         self.targetBytes = targetBytes
         self.removeLocation = removeLocation
+        wantsAnother = false
         kind = .video
         phase = .opening
         isShowing = true
@@ -223,6 +247,7 @@ final class ShrinkJob {
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("Shrink-preview.mp4")
             job.phase = .done(Finished(url: url, bytes: 19_040_000, originalBytes: 61_500_000))
         case "failed":
+            job.offersAnother = true
             job.phase = .failed("Couldn't open that video.")
         default:
             job.phase = .shrinking(0.62)

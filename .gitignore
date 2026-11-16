@@ -2,6 +2,7 @@
 ios/*.xcodeproj/
 ios/Shrink/Info.plist
 ios/ShrinkShare/Info.plist
+ios/*/*.entitlements
 build/
 DerivedData/
 *.xcresult

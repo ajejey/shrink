@@ -9,6 +9,10 @@ final class PresetsTests: XCTestCase {
         XCTAssertEqual(Set(catalog.presets.map(\.id)).count, catalog.presets.count, "ids are unique")
         for preset in catalog.presets {
             XCTAssertFalse(preset.title.trimmingCharacters(in: .whitespaces).isEmpty, "\(preset.id) has a title")
+            // The short name goes on Home's one-tap buttons, three to a row.
+            let short = try XCTUnwrap(preset.short, "\(preset.id) has a short name")
+            XCTAssertFalse(short.isEmpty, "\(preset.id) short name")
+            XCTAssertLessThanOrEqual(short.count, 12, "\(preset.id) short name fits a button")
             if let limit = preset.limitBytes {
                 XCTAssertGreaterThan(limit, 0, "\(preset.id) limit")
             }
