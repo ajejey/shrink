@@ -8,7 +8,7 @@ final class LibraryShrinkerTests: XCTestCase {
     private let hevc = AVOutputSettingsAssistant.availableOutputSettingsPresets().contains(.hevc1920x1080)
 
     func testABigVideoBecomesASmaller1080pCopyThatKeepsItsDateAndPlace() async throws {
-        let source = try TestMedia.makeVideo(width: 2560, height: 1440, seconds: 4, fps: 30, audio: true,
+        let source = try TestMedia.makeVideo(width: 2560, height: 1440, seconds: 2, fps: 30, audio: true,
                                              location: true, bitrate: 30_000_000)
         let output = TestMedia.temporaryURL("mov")
         let original = fileSize(source)
@@ -21,7 +21,7 @@ final class LibraryShrinkerTests: XCTestCase {
         XCTAssertEqual(result.outputSize.width, 1920)
         XCTAssertEqual(result.outputSize.height, 1080)
         XCTAssertLessThan(result.bytes, original / 2, "much smaller than the original")
-        try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
+        try await assertGood(output, duration: 2, hasAudio: true, portrait: false)
 
         let items = try await AVURLAsset(url: output).load(.metadata)
         let ids = items.compactMap { $0.identifier?.rawValue.lowercased() }
@@ -59,15 +59,17 @@ final class LibraryShrinkerTests: XCTestCase {
         try await assertGood(output, duration: 2, hasAudio: false, portrait: false)
     }
 
-    func testAVideoThatIsAlreadySmallIsLeftAlone() async throws {
-        let source = try TestMedia.makeVideo(width: 1280, height: 720, seconds: 2, fps: 30, audio: false,
-                                             bitrate: 800_000)
+    /// A copy that isn't clearly smaller than the original replaces nothing and leaves nothing behind.
+    /// (The scan only lists videos expected to save 30%, so this catches estimates that were wrong.)
+    func testACopyThatIsNotClearlySmallerIsThrownAway() async throws {
+        let source = try TestMedia.makeVideo(width: 1280, height: 720, seconds: 2, fps: 30, audio: false)
         let output = TestMedia.temporaryURL("mov")
 
         do {
+            // Claim the original is tiny: any real copy is bigger than 90% of it.
             _ = try await LibraryShrinker().shrink(
                 asset: AVURLAsset(url: source), to: output,
-                options: .init(size: .hd, hevc: hevc, originalBytes: fileSize(source))
+                options: .init(size: .hd, hevc: hevc, originalBytes: 10_000)
             )
             XCTFail("expected notSmaller")
         } catch let error as ShrinkError {

@@ -60,7 +60,7 @@ struct ProView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(selectedProduct == nil || store.purchasing)
+                    .disabled((selectedProduct == nil && !store.previewPrices) || store.purchasing)
                     HStack(spacing: 4) {
                         Button("Restore purchase") {
                             Task {

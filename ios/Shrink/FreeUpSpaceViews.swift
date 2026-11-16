@@ -469,6 +469,9 @@ struct AssetThumbnail: View {
     }
 
     private static func load(_ id: String, side: CGFloat) async -> UIImage? {
+        // Asking Photos for anything before access is granted makes iOS ask for access, so don't.
+        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        guard status == .authorized || status == .limited else { return nil }
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
