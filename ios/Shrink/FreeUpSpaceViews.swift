@@ -305,7 +305,7 @@ private struct FreeUpSpacePick: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Pick the videos to shrink")
                         .font(.title.bold())
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                     Text("Biggest first · \(model.videos.count) worth shrinking")
                         .font(.subheadline)
                 }
@@ -512,7 +512,7 @@ struct FreeUpSpaceCheck: View {
             } header: {
                 Text("Check before shrinking")
                     .font(.title.bold())
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                     .textCase(nil)
                     .padding(.bottom, 8)
             }
