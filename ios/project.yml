@@ -40,8 +40,8 @@ targets:
     dependencies:
       - target: ShrinkCore
       - target: ShrinkShare
-    # Shares Settings (the location switch) with the share sheet. Signing must add App Groups to
-    # both App IDs before a TestFlight build.
+    # Shares Settings (the location switch) with the share sheet. scripts/ios-signing.mjs puts the
+    # group in both App Store profiles.
     entitlements:
       path: Shrink/Shrink.entitlements
       properties:
@@ -75,7 +75,7 @@ targets:
           PROVISIONING_PROFILE_SPECIFIER: $(SHRINK_PROVISIONING_PROFILE)
 
   # "Shrink" in the share sheet (Photos, WhatsApp, Files…): the same job without opening the app.
-  # Needs its own App ID and App Store profile (com.useshrink.app.share) before a TestFlight build.
+  # Its own App ID and App Store profile (com.useshrink.app.share) come from scripts/ios-signing.mjs.
   ShrinkShare:
     type: app-extension
     platform: iOS

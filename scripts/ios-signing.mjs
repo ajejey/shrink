@@ -1,19 +1,25 @@
 // Signing for the cloud iOS build (.github/workflows/ios.yml), through the App Store Connect API.
 //
-//   node scripts/ios-signing.mjs setup           once, from the developer's PC: registers the
-//                                                 com.useshrink.app App ID if it's missing and makes the
-//                                                 "Shrink App Store" profile with the team's existing Apple
-//                                                 Distribution certificate; the certificate's key goes to
-//                                                 GitHub as IOS_DIST_KEY
-//   node scripts/ios-signing.mjs create <dir>    in CI: that certificate + profile, ready for Xcode
+//   node scripts/ios-signing.mjs setup           from the developer's PC: registers the app's and the share
+//                                                 sheet's App IDs if they're missing, turns on App Groups for
+//                                                 both, and makes an App Store profile for each with the team's
+//                                                 existing Apple Distribution certificate. The certificate's key
+//                                                 and the App Store Connect key go to GitHub as secrets.
+//   node scripts/ios-signing.mjs create <dir>    in CI: that certificate + both profiles, ready for Xcode
+//
+// The app and the share sheet share settings through the App Group group.com.useshrink.app. The API can
+// turn App Groups on for an App ID but can't create the group or attach it, so the first `setup` stops
+// and prints the two-minute steps for developer.apple.com; run `setup` again after them. Every profile is
+// checked for the group, so one without it never reaches a build (Xcode would fail at export instead).
 //
 // Shrink reuses the team's existing distribution certificate (its key is in APPLE_SECRETS_DIR, default
 // ~/.secrets/apple, as ios-distribution-<certificate id>.key), because Apple allows only a few per team.
 // Never revoke it after a build: a build Apple is still reviewing needs it (ITMS-90035). The certificate
-// and profile last a year; `create` warns a month ahead.
+// and profiles last a year; `create` warns a month ahead, and `setup` again makes fresh profiles.
 //
-// `setup` changes the Apple developer account (App ID, profile) and a GitHub secret: run it only with the owner's OK.
-// When the Share Extension lands it needs its own App ID (com.useshrink.app.share) and profile here too.
+// `setup` changes the Apple developer account (App IDs, profiles) and GitHub secrets: run it only with the
+// owner's OK. It replaces its own profiles (by name) each run; App Store profiles aren't on any phone, so
+// that never affects a build already uploaded.
 //
 // Needs ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (the .p8 file's text): a Team key with Admin access.
 // On the PC, setup falls back to the key file in APPLE_SECRETS_DIR.
@@ -23,9 +29,12 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFi
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const BUNDLE_ID = 'com.useshrink.app'
-const APP_NAME = 'Shrink'
-const PROFILE_NAME = 'Shrink App Store'
+const APP_GROUP = 'group.com.useshrink.app'
+// key: the GitHub output prefix (app_profile_name, share_profile_uuid, …).
+const TARGETS = [
+  { key: 'app', bundleId: 'com.useshrink.app', name: 'Shrink', profile: 'Shrink App Store', file: 'App_Store.mobileprovision' },
+  { key: 'share', bundleId: 'com.useshrink.app.share', name: 'Shrink Share', profile: 'Shrink Share App Store', file: 'Share_App_Store.mobileprovision' },
+]
 const REPO = process.env.SHRINK_REPO || 'ajejey/shrink'
 const SECRETS_DIR = process.env.APPLE_SECRETS_DIR || join(homedir(), '.secrets', 'apple')
 const API = 'https://api.appstoreconnect.apple.com/v1'
@@ -71,10 +80,13 @@ async function api(method, path, body) {
   return json
 }
 
-async function findProfile() {
-  const profiles = await api('GET', `/profiles?filter[name]=${encodeURIComponent(PROFILE_NAME)}&filter[profileType]=IOS_APP_STORE&limit=20`)
-  return profiles.data.find(p => p.attributes.name === PROFILE_NAME && p.attributes.profileState === 'ACTIVE')
+async function findProfile(name) {
+  const profiles = await api('GET', `/profiles?filter[name]=${encodeURIComponent(name)}&filter[profileType]=IOS_APP_STORE&limit=20`)
+  return profiles.data.find(p => p.attributes.name === name && p.attributes.profileState === 'ACTIVE')
 }
+
+/** The profile's entitlements are plain XML inside its signed envelope, so the group's name shows up as text. */
+const hasGroup = profile => Buffer.from(profile.attributes.profileContent, 'base64').toString('latin1').includes(`<string>${APP_GROUP}</string>`)
 
 /** The team's distribution certificate whose private key we hold, valid for at least another 30 days. */
 async function existingCertificate() {
@@ -110,65 +122,114 @@ async function newCertificate() {
   }
 }
 
-async function bundleIdRecord() {
-  const bundles = await api('GET', `/bundleIds?filter[identifier]=${BUNDLE_ID}`)
-  const found = bundles.data.find(b => b.attributes.identifier === BUNDLE_ID)
+async function bundleIdRecord(target) {
+  const bundles = await api('GET', `/bundleIds?filter[identifier]=${target.bundleId}`)
+  const found = bundles.data.find(b => b.attributes.identifier === target.bundleId)
   if (found) return found
   const made = await api('POST', '/bundleIds', {
-    data: { type: 'bundleIds', attributes: { identifier: BUNDLE_ID, name: APP_NAME, platform: 'IOS' } },
+    data: { type: 'bundleIds', attributes: { identifier: target.bundleId, name: target.name, platform: 'IOS' } },
   })
-  console.log(`[signing] registered App ID ${BUNDLE_ID}`)
+  console.log(`[signing] registered App ID ${target.bundleId}`)
   return made.data
 }
 
-if (command === 'setup') {
-  if (await findProfile()) {
-    console.error(`"${PROFILE_NAME}" already exists. Delete it in the developer site first to make a new one.`)
-    process.exit(1)
-  }
-  const cert = (await existingCertificate()) || (await newCertificate())
-  const bundle = await bundleIdRecord()
-  const profile = await api('POST', '/profiles', {
+async function turnOnAppGroups(bundle) {
+  const caps = await api('GET', `/bundleIds/${bundle.id}/bundleIdCapabilities?limit=50`)
+  if (caps.data.some(c => c.attributes.capabilityType === 'APP_GROUPS')) return
+  await api('POST', '/bundleIdCapabilities', {
     data: {
-      type: 'profiles',
-      attributes: { name: PROFILE_NAME, profileType: 'IOS_APP_STORE' },
-      relationships: {
-        bundleId: { data: { type: 'bundleIds', id: bundle.id } },
-        certificates: { data: [{ type: 'certificates', id: cert.id }] },
-      },
+      type: 'bundleIdCapabilities',
+      attributes: { capabilityType: 'APP_GROUPS' },
+      relationships: { bundleId: { data: { type: 'bundleIds', id: bundle.id } } },
     },
   })
-  execFileSync(GH, ['secret', 'set', 'IOS_DIST_KEY', '--repo', REPO], { input: cert.key, stdio: ['pipe', 'pipe', 'pipe'] })
-  console.log(`[signing] profile "${PROFILE_NAME}" (expires ${profile.data.attributes.expirationDate}) made with certificate ${cert.id}; its key is GitHub secret IOS_DIST_KEY on ${REPO}`)
+  console.log(`[signing] turned on App Groups for ${bundle.attributes.identifier}`)
+}
+
+function setSecret(name, value) {
+  execFileSync(GH, ['secret', 'set', name, '--repo', REPO], { input: value, stdio: ['pipe', 'pipe', 'pipe'] })
+}
+
+if (command === 'setup') {
+  const cert = (await existingCertificate()) || (await newCertificate())
+  const withoutGroup = []
+  for (const target of TARGETS) {
+    const bundle = await bundleIdRecord(target)
+    await turnOnAppGroups(bundle)
+    const old = await findProfile(target.profile)
+    if (old) await api('DELETE', `/profiles/${old.id}`)
+    const profile = (await api('POST', '/profiles', {
+      data: {
+        type: 'profiles',
+        attributes: { name: target.profile, profileType: 'IOS_APP_STORE' },
+        relationships: {
+          bundleId: { data: { type: 'bundleIds', id: bundle.id } },
+          certificates: { data: [{ type: 'certificates', id: cert.id }] },
+        },
+      },
+    })).data
+    if (!hasGroup(profile)) {
+      await api('DELETE', `/profiles/${profile.id}`)
+      withoutGroup.push(target.bundleId)
+      continue
+    }
+    console.log(`[signing] profile "${target.profile}" (expires ${profile.attributes.expirationDate}) made with certificate ${cert.id}`)
+  }
+  if (withoutGroup.length) {
+    console.error(`
+The App Group isn't attached to ${withoutGroup.join(' and ')} yet; Apple's API can't do this part.
+On developer.apple.com > Account > Certificates, Identifiers & Profiles > Identifiers:
+  1. If "${APP_GROUP}" isn't there yet: + > App Groups > Continue, description "Shrink",
+     identifier ${APP_GROUP} > Continue > Register.
+  2. For each of ${withoutGroup.join(', ')}: open it, tick App Groups if it isn't ticked, click its
+     Configure (or Edit) button, tick ${APP_GROUP}, Continue, then Save.
+Then run \`node scripts/ios-signing.mjs setup\` again.`)
+    process.exit(1)
+  }
+  setSecret('IOS_DIST_KEY', cert.key)
+  setSecret('ASC_KEY_ID', ASC_KEY_ID)
+  setSecret('ASC_ISSUER_ID', ASC_ISSUER_ID)
+  setSecret('ASC_KEY_P8', ASC_KEY_P8)
+  console.log(`[signing] secrets IOS_DIST_KEY, ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 set on ${REPO}`)
 } else {
   const key = process.env.IOS_DIST_KEY
   if (!key) {
     console.error('::error::Missing IOS_DIST_KEY. Run `node scripts/ios-signing.mjs setup` once from the PC.')
     process.exit(1)
   }
-  const profile = await findProfile()
-  if (!profile) {
-    console.error(`::error::No active "${PROFILE_NAME}" profile. Run \`node scripts/ios-signing.mjs setup\` from the PC.`)
-    process.exit(1)
-  }
-  const certs = await api('GET', `/profiles/${profile.id}/certificates`)
-  const cert = certs.data[0]
-  if (!cert) throw new Error(`"${PROFILE_NAME}" has no certificate`)
-  for (const [what, at] of [['certificate', cert.attributes.expirationDate], ['profile', profile.attributes.expirationDate]]) {
-    const days = Math.floor((Date.parse(at) - Date.now()) / 86400000)
-    if (days < 30) console.log(`::warning::The signing ${what} expires in ${days} days (${at}). Run \`node scripts/ios-signing.mjs setup\` again after deleting the old profile.`)
-  }
-
   mkdirSync(dir, { recursive: true })
+  let cert = null
+  let out = ''
+  for (const target of TARGETS) {
+    const profile = await findProfile(target.profile)
+    if (!profile) {
+      console.error(`::error::No active "${target.profile}" profile. Run \`node scripts/ios-signing.mjs setup\` from the PC.`)
+      process.exit(1)
+    }
+    if (!hasGroup(profile)) {
+      console.error(`::error::"${target.profile}" doesn't include ${APP_GROUP}. Run \`node scripts/ios-signing.mjs setup\` from the PC.`)
+      process.exit(1)
+    }
+    const certs = await api('GET', `/profiles/${profile.id}/certificates`)
+    const profileCert = certs.data[0]
+    if (!profileCert) throw new Error(`"${target.profile}" has no certificate`)
+    if (cert && profileCert.id !== cert.id) throw new Error(`"${target.profile}" uses a different certificate; run setup again`)
+    cert = profileCert
+    const days = Math.floor((Date.parse(profile.attributes.expirationDate) - Date.now()) / 86400000)
+    if (days < 30) console.log(`::warning::"${target.profile}" expires in ${days} days. Run \`node scripts/ios-signing.mjs setup\` again.`)
+    writeFileSync(join(dir, target.file), Buffer.from(profile.attributes.profileContent, 'base64'))
+    out += `${target.key}_profile_name=${target.profile}\n${target.key}_profile_uuid=${profile.attributes.uuid}\n${target.key}_profile_file=${target.file}\n`
+  }
+  const certDays = Math.floor((Date.parse(cert.attributes.expirationDate) - Date.now()) / 86400000)
+  if (certDays < 30) console.log(`::warning::The signing certificate expires in ${certDays} days (${cert.attributes.expirationDate}).`)
+
   writeFileSync(join(dir, 'dist.key'), key)
   writeFileSync(join(dir, 'dist.cer'), Buffer.from(cert.attributes.certificateContent, 'base64'))
   execFileSync(OPENSSL, ['x509', '-inform', 'DER', '-in', join(dir, 'dist.cer'), '-out', join(dir, 'dist.pem')])
   const p12Password = randomBytes(16).toString('hex')
   execFileSync(OPENSSL, ['pkcs12', '-export', '-inkey', join(dir, 'dist.key'), '-in', join(dir, 'dist.pem'), '-out', join(dir, 'dist.p12'), '-passout', `pass:${p12Password}`])
   writeFileSync(join(dir, 'p12-password'), p12Password)
-  writeFileSync(join(dir, 'App_Store.mobileprovision'), Buffer.from(profile.attributes.profileContent, 'base64'))
 
-  const out = `profile_name=${PROFILE_NAME}\nprofile_uuid=${profile.attributes.uuid}\n`
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, out)
-  console.log(`[signing] certificate ${cert.id} and profile "${PROFILE_NAME}" ready`)
+  console.log(`[signing] certificate ${cert.id} and profiles ${TARGETS.map(t => `"${t.profile}"`).join(', ')} ready`)
 }

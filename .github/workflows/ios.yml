@@ -6,8 +6,9 @@
 #             (Actions run > Artifacts > ios-results).
 # testflight  a pushed tag named ios-* (or "Run workflow" with TestFlight ticked): signs the app and
 #             uploads it to TestFlight. Needs the ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 secrets (an
-#             App Store Connect Team key with Admin access) and IOS_DIST_KEY, which
-#             `node scripts/ios-signing.mjs setup` puts there.
+#             App Store Connect Team key with Admin access) and IOS_DIST_KEY, all of which
+#             `node scripts/ios-signing.mjs setup` puts there. The app and its share sheet each have an
+#             App Store profile; both carry the App Group they share settings through.
 name: iOS
 
 on:
@@ -132,8 +133,11 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           security find-identity -v -p codesigning "$KEYCHAIN"
+          # The app's profile and the share sheet's.
           for d in "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
-            mkdir -p "$d" && cp "$SIGNING_DIR/App_Store.mobileprovision" "$d/${{ steps.signing.outputs.profile_uuid }}.mobileprovision"
+            mkdir -p "$d"
+            cp "$SIGNING_DIR/${{ steps.signing.outputs.app_profile_file }}" "$d/${{ steps.signing.outputs.app_profile_uuid }}.mobileprovision"
+            cp "$SIGNING_DIR/${{ steps.signing.outputs.share_profile_file }}" "$d/${{ steps.signing.outputs.share_profile_uuid }}.mobileprovision"
           done
 
       - name: Archive
@@ -143,7 +147,8 @@ jobs:
           echo "Build $BUILD_NUMBER"
           xcodebuild -project ios/Shrink.xcodeproj -scheme Shrink -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Shrink.xcarchive" \
-            SHRINK_PROVISIONING_PROFILE="${{ steps.signing.outputs.profile_name }}" \
+            SHRINK_PROVISIONING_PROFILE="${{ steps.signing.outputs.app_profile_name }}" \
+            SHRINK_SHARE_PROVISIONING_PROFILE="${{ steps.signing.outputs.share_profile_name }}" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" -quiet archive
 
       - name: Export the .ipa
@@ -159,7 +164,8 @@ jobs:
             <key>signingCertificate</key><string>Apple Distribution</string>
             <key>provisioningProfiles</key>
             <dict>
-              <key>com.useshrink.app</key><string>${{ steps.signing.outputs.profile_name }}</string>
+              <key>com.useshrink.app</key><string>${{ steps.signing.outputs.app_profile_name }}</string>
+              <key>com.useshrink.app.share</key><string>${{ steps.signing.outputs.share_profile_name }}</string>
             </dict>
             <key>uploadSymbols</key><true/>
           </dict>
