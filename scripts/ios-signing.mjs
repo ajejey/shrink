@@ -134,7 +134,8 @@ async function bundleIdRecord(target) {
 }
 
 async function turnOnAppGroups(bundle) {
-  const caps = await api('GET', `/bundleIds/${bundle.id}/bundleIdCapabilities?limit=50`)
+  // This relationship takes no `limit`; an App ID has only a handful of capabilities anyway.
+  const caps = await api('GET', `/bundleIds/${bundle.id}/bundleIdCapabilities`)
   if (caps.data.some(c => c.attributes.capabilityType === 'APP_GROUPS')) return
   await api('POST', '/bundleIdCapabilities', {
     data: {
