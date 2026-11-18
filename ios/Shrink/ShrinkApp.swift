@@ -32,9 +32,13 @@ struct ShrinkApp: App {
                     DestinationList(kind: nil, showsHeader: false) { _ in }
                         .navigationTitle("Where is it going?")
                 }
+            case "report"?:
+                ReportProblemView(report: ProblemReport(job: "Compress for Discord (20 MB)",
+                                                        problem: "The video couldn't be read."))
+            case "report-sent"?:
+                ReportProblemView(report: ProblemReport(), showsSent: true)
             case let state?:
                 ShrinkJobView(job: .preview(state))
-                    .environment(\.canReportProblem, true)
             }
         }
     }

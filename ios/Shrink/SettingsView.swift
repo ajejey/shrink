@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AppSettings.removeLocationKey, store: AppSettings.defaults) private var removeLocation = true
     @State private var showPro = false
+    @State private var showReport = false
 
     var body: some View {
         NavigationStack {
@@ -39,15 +40,20 @@ struct SettingsView: View {
                     Text("Videos and photos you send go out without the place they were taken.")
                 }
 
-                if let url = ProblemReport().mailtoURL {
+                if SupportContact.reportURL != nil {
                     Section("Help") {
-                        Link(destination: url) {
+                        Button {
+                            showReport = true
+                        } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Report a problem")
-                                Text("Opens an email with the details filled in")
+                                Text("Tell us what went wrong")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
+                        }
+                        .sheet(isPresented: $showReport) {
+                            ReportProblemView(report: ProblemReport())
                         }
                     }
                 }

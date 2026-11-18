@@ -1,37 +1,65 @@
 import SwiftUI
 import UIKit
 
-/// Where "Report a problem" emails go. nil until the support address exists, and every
-/// "Report a problem" button stays hidden until then.
+/// Where reports go: the support inbox's Google Apps Script (support/report-inbox.gs). Release builds get
+/// its URL from the SHRINK_REPORT_URL build setting (a GitHub secret, so it isn't in the public code).
+/// Local and test builds have none, and every "Report a problem" button stays hidden then.
 enum SupportContact {
-    static let email: String? = nil
+    static let reportURL: URL? = {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "ShrinkReportURL") as? String,
+              value.hasPrefix("https://"), let url = URL(string: value) else { return nil }
+        return url
+    }()
 }
 
-/// "Report a problem": an email draft in the person's own mail app, with what Shrink knows filled in
-/// (app and iOS version, iPhone model, the job, the error). Never the file or its name. No server.
+/// "Report a problem": what the person writes, plus what Shrink knows (app and iOS version, iPhone model,
+/// the job, the error), sent to the support inbox only when they tap Send. Never a video, a photo or a
+/// file name.
 struct ProblemReport {
     /// "Compress for Discord (20 MB)".
     var job: String?
     /// The message the person saw.
     var problem: String?
 
-    /// A mailto: link, or nil while there's no support address.
-    @MainActor var mailtoURL: URL? {
-        guard let email = SupportContact.email else { return nil }
-        let subject = Self.encoded("Shrink: problem report")
-        return URL(string: "mailto:\(email)?subject=\(subject)&body=\(Self.encoded(text))")
+    struct Detail: Hashable {
+        let label: String
+        let value: String
     }
 
-    @MainActor var text: String {
-        var lines = [
-            "What happened? Write it here.", "", "",
-            "-- Filled in by Shrink --",
-            "App: Shrink \(Self.appVersion)",
-            "iPhone: \(Self.deviceModel), iOS \(UIDevice.current.systemVersion)",
+    /// What goes with the person's words, listed on the form before they send.
+    @MainActor var details: [Detail] {
+        var rows = [
+            Detail(label: "App", value: "Shrink \(Self.appVersion)"),
+            Detail(label: "iPhone", value: "\(Self.deviceModel), iOS \(UIDevice.current.systemVersion)"),
         ]
-        if let job { lines.append("Job: \(job)") }
-        if let problem { lines.append("What went wrong: \(problem)") }
-        return lines.joined(separator: "\n")
+        if let job { rows.append(Detail(label: "Job", value: job)) }
+        if let problem { rows.append(Detail(label: "What went wrong", value: problem)) }
+        return rows
+    }
+
+    /// Posts the report. Apps Script answers through a redirect, which URLSession follows; the final
+    /// page says {"ok":true} once the report is in the sheet.
+    @MainActor func send(message: String, replyTo: String) async throws {
+        guard let url = SupportContact.reportURL else { throw URLError(.unsupportedURL) }
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "app": "Shrink",
+            "message": message,
+            "replyTo": replyTo,
+            "version": Self.appVersion,
+            "device": Self.deviceModel,
+            "ios": UIDevice.current.systemVersion,
+            "job": job ?? "",
+            "error": problem ?? "",
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200,
+              let reply = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              reply["ok"] as? Bool == true else {
+            throw URLError(.badServerResponse)
+        }
     }
 
     /// "1.0 (1)".
@@ -50,21 +78,115 @@ struct ProblemReport {
             String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
         }
     }
+}
 
-    /// Everything but letters and digits escaped, so "&", "+" and new lines survive in any mail app.
-    private static func encoded(_ value: String) -> String {
-        value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+/// The form: what happened, an optional email for a reply, and exactly what goes with it.
+struct ReportProblemView: View {
+    let report: ProblemReport
+    /// For CI screenshots: the screen after a report went through.
+    var showsSent = false
+    @Environment(\.dismiss) private var dismiss
+    @State private var message = ""
+    @State private var replyTo = ""
+    @State private var sending = false
+    @State private var failed = false
+    @State private var sent = false
+    @FocusState private var writing: Bool
+
+    private var canSend: Bool {
+        !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
     }
-}
 
-private struct CanReportProblemKey: EnvironmentKey {
-    static let defaultValue = false
-}
+    var body: some View {
+        NavigationStack {
+            Group {
+                if sent || showsSent {
+                    ContentUnavailableView {
+                        Label("Report sent", systemImage: "checkmark.circle.fill")
+                    } description: {
+                        Text("Thank you. Every report is read, and if you left your email, you'll get a reply.")
+                    }
+                } else {
+                    form
+                }
+            }
+            .navigationTitle("Report a problem")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if sent || showsSent {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        if sending {
+                            ProgressView()
+                        } else {
+                            Button("Send") { send() }
+                                .disabled(!canSend)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-extension EnvironmentValues {
-    /// True in the app. The share sheet can't open the mail app, so it doesn't offer it.
-    var canReportProblem: Bool {
-        get { self[CanReportProblemKey.self] }
-        set { self[CanReportProblemKey.self] = newValue }
+    private var form: some View {
+        Form {
+            Section("What happened?") {
+                TextField("Tell us what went wrong", text: $message, axis: .vertical)
+                    .lineLimit(5...12)
+                    .focused($writing)
+            }
+            Section {
+                TextField("Your email", text: $replyTo)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            } header: {
+                Text("Want a reply?")
+            } footer: {
+                Text("Optional. Only used to answer you.")
+            }
+            Section {
+                ForEach(report.details, id: \.self) { row in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.label).font(.subheadline).foregroundStyle(.secondary)
+                        Text(row.value)
+                    }
+                }
+            } header: {
+                Text("Sent with your message")
+            } footer: {
+                Text("Never your videos, photos or their names.")
+            }
+            if failed {
+                Section {
+                    Text("Couldn't send it. Check your connection and tap Send again.")
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .onAppear { writing = true }
+    }
+
+    private func send() {
+        sending = true
+        failed = false
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = replyTo.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            do {
+                try await report.send(message: text, replyTo: email)
+                sent = true
+            } catch {
+                failed = true
+            }
+            sending = false
+        }
     }
 }

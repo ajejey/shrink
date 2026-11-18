@@ -92,7 +92,6 @@ struct HomeView: View {
         // A full, solid screen: the first demo's half sheet let the list behind show through.
         .fullScreenCover(isPresented: $job.isShowing, onDismiss: jobClosed) {
             ShrinkJobView(job: job)
-                .environment(\.canReportProblem, true)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()

@@ -4,7 +4,7 @@ import SwiftUI
 /// The whole screen for one job: pick the part to send, watch it shrink, then send it.
 struct ShrinkJobView: View {
     let job: ShrinkJob
-    @Environment(\.canReportProblem) private var canReportProblem
+    @State private var showReport = false
 
     var body: some View {
         NavigationStack {
@@ -123,15 +123,19 @@ struct ShrinkJobView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                     }
-                    if canReportProblem,
-                       let url = ProblemReport(job: job.jobDescription, problem: message).mailtoURL {
-                        Link(destination: url) {
+                    if SupportContact.reportURL != nil {
+                        Button {
+                            showReport = true
+                        } label: {
                             Text("Report a problem")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.large)
+                        .sheet(isPresented: $showReport) {
+                            ReportProblemView(report: ProblemReport(job: job.jobDescription, problem: message))
+                        }
                     }
                 }
             }

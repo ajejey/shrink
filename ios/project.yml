@@ -53,6 +53,8 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        # Report a problem's inbox (support/report-inbox.gs); empty except in release builds.
+        ShrinkReportURL: $(SHRINK_REPORT_URL)
         # Free up space reads the library and saves the smaller copies. Sending uses the Photos
         # picker, which needs no permission.
         NSPhotoLibraryUsageDescription: Shrink finds your biggest videos so you can shrink them. Nothing leaves your iPhone.
@@ -92,6 +94,7 @@ targets:
         CFBundleDisplayName: Shrink
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ShrinkReportURL: $(SHRINK_REPORT_URL)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
