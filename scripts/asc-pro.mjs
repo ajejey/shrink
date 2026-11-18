@@ -6,7 +6,7 @@
 //   node scripts/asc-pro.mjs setup               both products: wording, availability and prices
 //   node scripts/asc-pro.mjs screenshot <png>    the review screenshot (the Pro screen) on both
 //
-// "Pay once" is a non-consumable; "Yearly" is an auto-renewable subscription in the "Shrink Pro" group.
+// "Pay once" ($39.99) is a non-consumable; "Yearly" ($19.99) is an auto-renewable subscription in the "Shrink Pro" group.
 // The product IDs must match ios/Shrink/Store.swift. Both sell wherever the app does: the US price is
 // the base and each other country gets Apple's matching price. A price is set here only when a product
 // has none; change prices later in App Store Connect, which decides how existing subscribers are treated.
@@ -19,8 +19,8 @@ import { all, api, find, findApp, maybe, upload } from './asc-api.mjs'
 const GROUP = 'Shrink Pro'
 const DESCRIPTION = 'Free up space with no limit'
 const REVIEW_NOTE = 'Shrink Pro removes the 5 GB limit on Free up space. To see it, tap the Settings button at the top of Home, then Get Pro. It also appears before a Free up space batch that would go past the free 5 GB. Sending videos and photos is free for everyone.'
-const LIFETIME = { productId: 'com.useshrink.app.pro.lifetime', name: 'Pro Lifetime', display: 'Shrink Pro', price: '19.99' }
-const YEARLY = { productId: 'com.useshrink.app.pro.yearly', name: 'Pro Yearly', display: 'Shrink Pro Yearly', price: '7.99', period: 'ONE_YEAR', level: 1 }
+const LIFETIME = { productId: 'com.useshrink.app.pro.lifetime', name: 'Pro Lifetime', display: 'Shrink Pro', price: '39.99' }
+const YEARLY = { productId: 'com.useshrink.app.pro.yearly', name: 'Pro Yearly', display: 'Shrink Pro Yearly', price: '19.99', period: 'ONE_YEAR', level: 1 }
 
 const rel = (type, id) => ({ data: { type, id } })
 

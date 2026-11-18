@@ -33,9 +33,9 @@ struct ProView: View {
                     } else {
                         VStack(spacing: 10) {
                             plan(id: Store.lifetimeID, name: "Pay once", detail: "Yours forever",
-                                 price: store.lifetime?.displayPrice ?? (store.previewPrices ? "$19.99" : "…"))
+                                 price: store.lifetime?.displayPrice ?? (store.previewPrices ? "$39.99" : "…"))
                             plan(id: Store.yearlyID, name: "Yearly", detail: "Cancel anytime in Settings",
-                                 price: "\(store.yearly?.displayPrice ?? (store.previewPrices ? "$7.99" : "…")) a year")
+                                 price: "\(store.yearly?.displayPrice ?? (store.previewPrices ? "$19.99" : "…")) a year")
                         }
                         .accessibilityElement(children: .contain)
                     }
@@ -111,7 +111,7 @@ struct ProView: View {
             return choice == Store.lifetimeID ? "Get Pro for \(product.displayPrice)"
                                               : "Get Pro for \(product.displayPrice) a year"
         }
-        if store.previewPrices { return choice == Store.lifetimeID ? "Get Pro for $19.99" : "Get Pro for $7.99 a year" }
+        if store.previewPrices { return choice == Store.lifetimeID ? "Get Pro for $39.99" : "Get Pro for $19.99 a year" }
         return "Get Pro"
     }
 

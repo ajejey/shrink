@@ -2,7 +2,7 @@ import Security
 import StoreKit
 import SwiftUI
 
-/// Shrink Pro: unlimited Free up space. Pay once ($19.99) or yearly ($7.99), as App Store Connect sets
+/// Shrink Pro: unlimited Free up space. Pay once ($39.99) or yearly ($19.99), as App Store Connect sets
 /// the prices. No weekly plan, no trial that charges later. Sending is free for everyone, always.
 @Observable
 @MainActor
