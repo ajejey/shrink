@@ -137,6 +137,8 @@ struct HomeView: View {
             if let destination = Destination.find(id: id) { pick(destination) }
         case .freeUp:
             showFreeUp = true
+        case .cleanUp:
+            showCleanup = true
         }
     }
 

@@ -1,8 +1,9 @@
 import AppIntents
 import SwiftUI
 
-/// "Shrink a video for Discord" and "Free up space", in Siri and Spotlight with no setup.
-/// Each opens the app at the right place: the Photos picker for that destination, or Free up space.
+/// "Shrink a video for Discord", "Free up space" and "Clean up photos", in Siri and Spotlight with no
+/// setup. Each opens the app at the right place: the Photos picker for that destination, Free up space,
+/// or Clean up photos.
 struct ShrinkShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -22,6 +23,16 @@ struct ShrinkShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Free up space",
             systemImageName: "gauge.with.needle"
+        )
+        AppShortcut(
+            intent: CleanUpPhotosIntent(),
+            phrases: [
+                "Clean up photos with \(.applicationName)",
+                "Delete duplicate photos with \(.applicationName)",
+                "Delete screenshots with \(.applicationName)",
+            ],
+            shortTitle: "Clean up photos",
+            systemImageName: "photo.stack"
         )
     }
 }
@@ -77,6 +88,18 @@ struct FreeUpSpaceIntent: AppIntent {
     }
 }
 
+struct CleanUpPhotosIntent: AppIntent {
+    static var title: LocalizedStringResource = "Clean up photos"
+    static var description = IntentDescription("Sort out duplicates, screenshots, blurry shots and other photos you may not need.")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        ShortcutRouter.shared.request = .cleanUp
+        return .result()
+    }
+}
+
 /// Hands a shortcut to Home, which opens the right screen.
 @Observable
 @MainActor
@@ -87,6 +110,7 @@ final class ShortcutRouter {
         /// A destination's id from presets.json.
         case send(String)
         case freeUp
+        case cleanUp
     }
 
     var request: Request?

@@ -4,8 +4,8 @@
 # test        every push that touches the app, and every TestFlight tag: generates the project, runs the
 #             encoding tests on an iPhone simulator, opens the app and saves screenshots
 #             (Actions run > Artifacts > ios-results).
-# freeup-on-photos  every push too: Free up space start to finish on a simulator's real Photos library
-#             (Actions run > Artifacts > freeup-e2e).
+# freeup-on-photos  every push too: Free up space start to finish on a simulator's real Photos library,
+#             shrinking videos and then cleaning up photos (Actions run > Artifacts > freeup-e2e, cleanup-e2e).
 # testflight  a pushed tag named ios-* (or "Run workflow" with TestFlight ticked): signs the app and
 #             uploads it to TestFlight. Needs the ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 secrets (an
 #             App Store Connect Team key with Admin access) and IOS_DIST_KEY, all of which
@@ -21,6 +21,7 @@ on:
       - 'shared/**'
       - 'scripts/ios-signing.mjs'
       - 'scripts/check-freeup-e2e.mjs'
+      - 'scripts/check-cleanup-e2e.mjs'
       - '.github/workflows/ios.yml'
     tags: ['ios-*']
   workflow_dispatch:
@@ -63,8 +64,8 @@ jobs:
           xcodebuild -version
           xcodebuild test -project ios/Shrink.xcodeproj -scheme Shrink \
             -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build \
-            -resultBundlePath results/tests.xcresult CODE_SIGNING_ALLOWED=NO \
-            | tee results/test-log.txt | grep -E "error:|warning: .*Shrink|Test Case .*(passed|failed)|Executed|TEST (SUCCEEDED|FAILED)|BUILD (SUCCEEDED|FAILED)"
+            -resultBundlePath results/tests.xcresult CODE_SIGNING_ALLOWED=NO             -test-timeouts-enabled YES -default-test-execution-time-allowance 420 \
+            | tee results/test-log.txt | grep -E "error:|warning: .*Shrink|Test Case .*(passed|failed|skipped)|PHOTO-LOOK|Executed|TEST (SUCCEEDED|FAILED)|BUILD (SUCCEEDED|FAILED)"
 
       - name: Open the app and take screenshots
         if: always()
@@ -107,7 +108,7 @@ jobs:
   # Screenshots, the library before and after, and the app's log: Artifacts > freeup-e2e.
   freeup-on-photos:
     runs-on: macos-26
-    timeout-minutes: 50
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
 
@@ -193,6 +194,32 @@ jobs:
         with:
           name: freeup-e2e
           path: e2e/
+
+      # Then Clean up photos on the same library: the app's Debug hook adds a camera photo, a picture
+      # from a chat, the same picture twice and a Live Photo (ios/Shrink/E2EPhotos.swift); the test
+      # deletes the pre-picked duplicate and turns the Live Photo into a still through iOS's prompt;
+      # scripts/check-cleanup-e2e.mjs checks that exactly that changed.
+      - name: Clean up photos, start to finish
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          mkdir -p e2e-photos
+          TEST_RUNNER_E2E_SHOTS="$PWD/e2e-photos" xcodebuild test-without-building -project ios/Shrink.xcodeproj             -scheme ShrinkDemo -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build             -only-testing:ShrinkUITests/PhotoCleanupE2ETests -resultBundlePath e2e-photos/e2e.xcresult             CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= 2>&1 | tee e2e-photos/test-log.txt             | grep -E "E2E|Test Case|error:|TEST (EXECUTE )?(SUCCEEDED|FAILED)"
+
+      - name: Check the photo library afterwards
+        if: ${{ !cancelled() }}
+        run: |
+          DEVICE=${{ steps.sim.outputs.udid }}
+          DATA=$(xcrun simctl get_app_container "$DEVICE" com.useshrink.app data) || true
+          cp "$DATA"/Documents/e2e-photos-*.json e2e-photos/ 2>/dev/null || true
+          xcrun simctl spawn "$DEVICE" log show --last 15m --predicate 'process == "Shrink"' --style compact > e2e-photos/app-log.txt || true
+          node scripts/check-cleanup-e2e.mjs e2e-photos
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cleanup-e2e
+          path: e2e-photos/
 
   testflight:
     if: ${{ startsWith(github.ref, 'refs/tags/ios-') || (github.event_name == 'workflow_dispatch' && inputs.testflight) }}

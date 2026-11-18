@@ -5,14 +5,18 @@ import Photos
 import SwiftUI
 
 /// CI only, and only in Debug builds (never in the App Store build): sets up and reads back the
-/// simulator's Photos library for the Free up space end-to-end test (ShrinkUITests/FreeUpSpaceE2ETests,
-/// the freeup-on-photos job in .github/workflows/ios.yml).
+/// simulator's Photos library for the end-to-end tests (ShrinkUITests/FreeUpSpaceE2ETests and
+/// PhotoCleanupE2ETests, the freeup-on-photos job in .github/workflows/ios.yml).
 ///
-///   -e2e prepare   gives every video its own date, makes the one with a place (or the 1080p one, given a
-///                  place) a favorite in an album called "Trips", then writes Documents/e2e-before.json
-///   -e2e report    writes Documents/e2e-after.json
+///   -e2e prepare          gives every video its own date, makes the one with a place (or the 1080p one,
+///                         given a place) a favorite in an album called "Trips", then writes
+///                         Documents/e2e-before.json
+///   -e2e report           writes Documents/e2e-after.json
+///   -e2e prepare-photos   adds the photo cleanup test's photos (E2EPhotos.swift), then writes
+///                         Documents/e2e-photos-before.json
+///   -e2e report-photos    writes Documents/e2e-photos-after.json
 ///
-/// scripts/check-freeup-e2e.mjs compares the two.
+/// scripts/check-freeup-e2e.mjs and scripts/check-cleanup-e2e.mjs compare them.
 struct E2EView: View {
     let mode: String
     @State private var status = "E2E working"
@@ -31,14 +35,29 @@ enum E2EHooks {
         let access = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         guard access == .authorized else { return "E2E failed: no full Photos access (\(access.rawValue))" }
         do {
-            if mode == "prepare" { try await prepare() }
-            let facts = await describeLibrary()
-            let name = mode == "prepare" ? "e2e-before.json" : "e2e-after.json"
+            let facts: [[String: Any]]
+            let name: String
+            switch mode {
+            case "prepare-photos":
+                try await E2EPhotos.prepare()
+                facts = E2EPhotos.describe()
+                name = "e2e-photos-before.json"
+            case "report-photos":
+                facts = E2EPhotos.describe()
+                name = "e2e-photos-after.json"
+            case "prepare":
+                try await prepare()
+                facts = await describeLibrary()
+                name = "e2e-before.json"
+            default:
+                facts = await describeLibrary()
+                name = "e2e-after.json"
+            }
             let folder = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
                                                      appropriateFor: nil, create: true)
             let data = try JSONSerialization.data(withJSONObject: facts, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: folder.appendingPathComponent(name))
-            return "E2E done: \(facts.count) videos"
+            return "E2E done: \(facts.count) items"
         } catch {
             return "E2E failed: \(error.localizedDescription)"
         }
@@ -130,7 +149,7 @@ enum E2EHooks {
     }
 }
 
-private struct E2EError: LocalizedError {
+struct E2EError: LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }

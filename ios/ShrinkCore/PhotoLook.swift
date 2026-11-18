@@ -9,8 +9,38 @@ import Vision
 public enum PhotoLook {
     public enum LookError: LocalizedError {
         case noResult
-        public var errorDescription: String? { "Vision returned nothing for this picture." }
+        /// Vision didn't answer in time (or stalled earlier, so it isn't asked again this session).
+        case stalled
+        public var errorDescription: String? {
+            switch self {
+            case .noResult: "Vision returned nothing for this picture."
+            case .stalled: "Vision didn't answer in time."
+            }
+        }
     }
+
+    /// How long one Vision request may take. The first one loads Vision's model, so this is generous.
+    public static var visionTimeout: TimeInterval = 45
+
+    /// Runs one Vision request on its own thread and waits at most `visionTimeout`. If it doesn't come
+    /// back, that kind of request is switched off for the rest of the session, so a stuck Vision (a
+    /// simulator without a Neural Engine, a model that won't load) slows a scan down once, never stops it.
+    static func withinTimeout<T>(_ kind: VisionKind, _ work: @escaping () throws -> T) throws -> T {
+        guard !VisionHealth.shared.isStalled(kind) else { throw LookError.stalled }
+        let box = ResultBox<T>()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            box.result = Result { try work() }
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + visionTimeout) == .success, let result = box.result else {
+            VisionHealth.shared.markStalled(kind)
+            throw LookError.stalled
+        }
+        return try result.get()
+    }
+
+    enum VisionKind: Hashable { case featurePrint, quality }
 
     /// A 64-bit difference hash: the picture shrunk to 9×8 grey pixels, one bit per pair of
     /// neighbours. The same pixels always give the same hash.
@@ -63,6 +93,11 @@ public enum PhotoLook {
     /// The picture's Vision feature print (for similar shots).
     public static func featureVector(_ image: CGImage,
                                      orientation: CGImagePropertyOrientation = .up) throws -> FeatureVector {
+        try withinTimeout(.featurePrint) { try computeFeatureVector(image, orientation: orientation) }
+    }
+
+    private static func computeFeatureVector(_ image: CGImage,
+                                             orientation: CGImagePropertyOrientation) throws -> FeatureVector {
         let request = VNGenerateImageFeaturePrintRequest()
         #if targetEnvironment(simulator)
         // The simulator has no Neural Engine.
@@ -101,6 +136,11 @@ public enum PhotoLook {
     /// Nil before iOS 18, which doesn't have the request.
     public static func quality(_ image: CGImage, orientation: CGImagePropertyOrientation = .up) throws -> Quality? {
         guard #available(iOS 18.0, *) else { return nil }
+        return try withinTimeout(.quality) { try computeQuality(image, orientation: orientation) }
+    }
+
+    @available(iOS 18.0, *)
+    private static func computeQuality(_ image: CGImage, orientation: CGImagePropertyOrientation) throws -> Quality {
         let request = VNCalculateImageAestheticsScoresRequest()
         try VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:]).perform([request])
         guard let result = request.results?.first else { throw LookError.noResult }
@@ -129,4 +169,28 @@ public enum PhotoLook {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
     }
+}
+
+/// Which kinds of Vision request have stalled this session.
+final class VisionHealth: @unchecked Sendable {
+    static let shared = VisionHealth()
+    private let lock = NSLock()
+    private var stalled: Set<PhotoLook.VisionKind> = []
+
+    func isStalled(_ kind: PhotoLook.VisionKind) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stalled.contains(kind)
+    }
+
+    func markStalled(_ kind: PhotoLook.VisionKind) {
+        lock.lock()
+        stalled.insert(kind)
+        lock.unlock()
+    }
+}
+
+/// Carries a request's result back from its thread.
+private final class ResultBox<T>: @unchecked Sendable {
+    var result: Result<T, Error>?
 }
