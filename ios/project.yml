@@ -55,9 +55,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Report a problem's inbox (support/report-inbox.gs); empty except in release builds.
         ShrinkReportURL: $(SHRINK_REPORT_URL)
-        # Free up space reads the library and saves the smaller copies. Sending uses the Photos
-        # picker, which needs no permission.
-        NSPhotoLibraryUsageDescription: Shrink finds your biggest videos so you can shrink them. Nothing leaves your iPhone.
+        # Free up space reads the library, saves the smaller copies and still photos, and sorts photos
+        # into piles. Sending uses the Photos picker, which needs no permission.
+        NSPhotoLibraryUsageDescription: Shrink finds your biggest videos and the photos you may not need, so you can free up space. Nothing leaves your iPhone.
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         # iOS 26: Free up space batches keep going in the background (ContinuedRun.swift). Each batch
         # registers its own "com.useshrink.app.freeup.<time>".

@@ -4,10 +4,13 @@ import SwiftUI
 import UIKit
 
 /// Home's "Free up space" card. Before access: what it does and that the first 5 GB is free.
-/// After a scan it's the dashboard: what the videos could free, what's new, the allowance, iPhone storage.
+/// After a scan it's the dashboard: what the videos could free, what photo cleanup found, what's new,
+/// the allowance (shared by both), iPhone storage.
 struct FreeUpSpaceCard: View {
     let model: FreeUpSpace
+    let cleanup: PhotoCleanup
     let onOpen: () -> Void
+    let onOpenCleanup: () -> Void
     private var store: Store { .shared }
     @Environment(\.openURL) private var openURL
     @State private var showPro = false
@@ -18,12 +21,12 @@ struct FreeUpSpaceCard: View {
                 .font(.title.bold())
             switch model.access {
             case .notAsked:
-                Text("See which videos take the most room on your iPhone and shrink them. You pick which ones.")
+                Text("See which videos take the most room and which photos you may not need. You pick what goes.")
                     .foregroundStyle(.secondary)
                 checkLine("Your first 5 GB is free")
                 bigButton("Find my biggest videos")
             case .denied:
-                Text("Shrink can't see your videos. Allow access to Photos in Settings to find the big ones.")
+                Text("Shrink can't see your videos and photos. Allow access to Photos in Settings to find what takes up space.")
                     .foregroundStyle(.secondary)
                 Button {
                     if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
@@ -33,15 +36,29 @@ struct FreeUpSpaceCard: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
             case .limited, .full:
+                Text("Shrink big videos")
+                    .font(.title3.weight(.semibold))
                 summary
+                bigButton("See the videos")
+                Divider().padding(.vertical, 4)
+                Text("Clean up photos")
+                    .font(.title3.weight(.semibold))
+                photoSummary
+                Button(action: onOpenCleanup) {
+                    Text("See the photos").font(.headline).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .padding(.top, 4)
                 if model.access == .limited {
-                    Text("Shrink can only see the videos you chose. Allow all in Settings to find every big one.")
+                    Text("Shrink can only see the photos and videos you chose. Allow all in Settings to find everything.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 if !model.pendingOriginals.isEmpty {
                     pendingRow
                 }
+                Divider().padding(.vertical, 4)
                 AllowanceBar()
                 if !store.isPro, FreeAllowance.leftBytes == 0 {
                     HStack {
@@ -57,7 +74,6 @@ struct FreeUpSpaceCard: View {
                           value: "\(SizeFormat.string(storage.freeBytes)) free of \(SizeFormat.string(storage.totalBytes))",
                           fraction: 1 - Double(storage.freeBytes) / Double(storage.totalBytes), tint: .gray)
                 }
-                bigButton("See the videos")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -76,7 +92,7 @@ struct FreeUpSpaceCard: View {
         case .finished:
             if model.totalSaving > 0 {
                 Text("Your videos could free about \(SizeFormat.string(model.totalSaving))")
-                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 if model.newSinceLastTime > 0 {
                     Label("New since last time: about \(SizeFormat.string(model.newSinceLastTime))", systemImage: "plus")
                         .font(.subheadline)
@@ -85,6 +101,21 @@ struct FreeUpSpaceCard: View {
                 Text("Your videos are already small. Nothing here is worth shrinking.")
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder private var photoSummary: some View {
+        switch cleanup.scan {
+        case .notStarted, .listing:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Looking at your photos…").foregroundStyle(.secondary)
+            }
+        default:
+            Text(cleanup.mayFree > 0
+                 ? "Duplicates, screenshots, blurry shots and more could free about \(SizeFormat.string(cleanup.mayFree))"
+                 : "Duplicates, screenshots, blurry shots and more")
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -447,28 +478,33 @@ private struct VideoRow: View {
     }
 }
 
-/// A small square picture of a library video.
+/// A square picture of a library photo or video. With no `side` it fills the width it's given.
 struct AssetThumbnail: View {
     let id: String
-    var side: CGFloat = 60
+    var side: CGFloat? = 60
+    var corner: CGFloat = 8
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            Color(.tertiarySystemFill)
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+        Color(.tertiarySystemFill)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else if id.hasPrefix("preview-") {
+                    PreviewArt(id: id)
+                }
             }
-        }
-        .frame(width: side, height: side)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .accessibilityHidden(true)
-        .task(id: id) { image = await Self.load(id, side: side) }
+            .frame(width: side, height: side)
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: corner))
+            .accessibilityHidden(true)
+            .task(id: id) { image = await Self.load(id, pixels: (side ?? 140) * 3, mode: .aspectFill) }
     }
 
-    private static func load(_ id: String, side: CGFloat) async -> UIImage? {
+    static func load(_ id: String, pixels: CGFloat, mode: PHImageContentMode) async -> UIImage? {
+        guard !id.hasPrefix("preview-") else { return nil }
         // Asking Photos for anything before access is granted makes iOS ask for access, so don't.
         let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         guard status == .authorized || status == .limited else { return nil }
@@ -477,14 +513,34 @@ struct AssetThumbnail: View {
         options.deliveryMode = .highQualityFormat
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = true
-        let pixels = side * 3
         return await withCheckedContinuation { done in
             PHImageManager.default().requestImage(
-                for: asset, targetSize: CGSize(width: pixels, height: pixels), contentMode: .aspectFill, options: options
+                for: asset, targetSize: CGSize(width: pixels, height: pixels), contentMode: mode, options: options
             ) { image, _ in
                 done.resume(returning: image)
             }
         }
+    }
+}
+
+/// For CI screenshots only: a made-up picture where a library photo would be (ids starting "preview-").
+struct PreviewArt: View {
+    let id: String
+    private static let symbols = ["sun.max.fill", "leaf.fill", "car.fill", "fork.knife", "pawprint.fill",
+                                  "mountain.2.fill", "building.2.fill", "figure.walk", "doc.text.fill",
+                                  "message.fill", "birthday.cake.fill", "beach.umbrella.fill"]
+
+    var body: some View {
+        let seed = id.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
+        let hue = Double(seed % 360) / 360
+        LinearGradient(colors: [Color(hue: hue, saturation: 0.5, brightness: 0.9),
+                                Color(hue: (hue + 0.1).truncatingRemainder(dividingBy: 1), saturation: 0.7, brightness: 0.55)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay {
+                Image(systemName: Self.symbols[Int(seed / 7) % Self.symbols.count])
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
     }
 }
 

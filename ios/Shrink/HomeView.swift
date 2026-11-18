@@ -14,14 +14,18 @@ struct HomeView: View {
     @State private var recents = RecentPlaces.load()
     @State private var freeUp: FreeUpSpace
     @State private var showFreeUp = false
+    @State private var cleanup: PhotoCleanup
+    @State private var showCleanup = false
     private let router = ShortcutRouter.shared
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
 
-    /// `freeUp` is a frozen copy for CI screenshots; the app makes its own.
+    /// `freeUp` and `cleanup` are frozen copies for CI screenshots; the app makes its own.
     @MainActor
-    init(freeUp: FreeUpSpace? = nil) {
-        _freeUp = State(initialValue: freeUp ?? FreeUpSpace())
+    init(freeUp: FreeUpSpace? = nil, cleanup: PhotoCleanup? = nil) {
+        let model = freeUp ?? FreeUpSpace()
+        _freeUp = State(initialValue: model)
+        _cleanup = State(initialValue: cleanup ?? PhotoCleanup(freeUp: model))
     }
 
     var body: some View {
@@ -32,7 +36,8 @@ struct HomeView: View {
                              isRecent: !recents.isEmpty,
                              onPick: pick,
                              onAllPlaces: { showPlaces = true })
-                    FreeUpSpaceCard(model: freeUp) { showFreeUp = true }
+                    FreeUpSpaceCard(model: freeUp, cleanup: cleanup,
+                                    onOpen: { showFreeUp = true }, onOpenCleanup: { showCleanup = true })
                     Text("Everything happens on your iPhone. Nothing is uploaded.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -40,6 +45,11 @@ struct HomeView: View {
                         .padding(.top, 8)
                 }
                 .padding(16)
+                // Photo cleanup's progress and result (on its own view, apart from the other covers).
+                .fullScreenCover(isPresented: Binding(get: { cleanup.isRunShowing },
+                                                      set: { if !$0 { cleanup.cancelRun() } })) {
+                    PhotoCleanupRunView(model: cleanup)
+                }
             }
             .background(Color(.systemGroupedBackground))
             // Free up space's progress and result, over everything (on its own view, apart from the job's cover).
@@ -66,14 +76,22 @@ struct HomeView: View {
             .navigationDestination(isPresented: $showFreeUp) {
                 FreeUpSpaceScreen(model: freeUp)
             }
+            .navigationDestination(isPresented: $showCleanup) {
+                PhotoCleanupScreen(model: cleanup)
+            }
         }
         .task {
             freeUp.restoreInterruptedRun()
             await Store.shared.load()
             await freeUp.refreshAndScanIfNeeded()
+            await cleanup.refreshAndListIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await freeUp.refreshAndScanIfNeeded() } }
+            guard phase == .active else { return }
+            Task {
+                await freeUp.refreshAndScanIfNeeded()
+                await cleanup.refreshAndListIfNeeded()
+            }
         }
         .onChange(of: router.request, initial: true) { _, _ in openShortcut() }
         .onChange(of: freeUp.requestsHome) { _, goHome in
@@ -81,6 +99,12 @@ struct HomeView: View {
             freeUp.requestsHome = false
             showFreeUp = false
             if freeUp.lastRunFreed > 0, ReviewPrompt.recordSuccess() { requestReview() }
+        }
+        .onChange(of: cleanup.requestsHome) { _, goHome in
+            guard goHome else { return }
+            cleanup.requestsHome = false
+            showCleanup = false
+            if cleanup.lastRunFreed > 0, ReviewPrompt.recordSuccess() { requestReview() }
         }
         .photosPicker(isPresented: $showPicker, selection: $pickedItem,
                       matching: chosen?.pickerFilter ?? .videos, preferredItemEncoding: .current)

@@ -18,12 +18,12 @@ struct ProView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Free up all the space")
                             .font(.largeTitle.bold())
-                        Text("Shrink Pro removes the 5 GB limit on Free up space.")
+                        Text("Shrink Pro removes the 5 GB limit on Free up space: shrinking videos and cleaning up photos.")
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 10) {
-                        benefit("Free up space with no limit")
+                        benefit("Shrink videos and clean up photos with no limit")
                         benefit("Pay once and get every Pro feature added later")
                         benefit("Sending stays free for everyone, as many as you like")
                     }
@@ -160,7 +160,7 @@ struct PrivacyView: View {
             Section {
                 Text("Everything happens on your iPhone. Your videos and photos are never uploaded.")
                 Text("Shrink has no accounts, no ads and no tracking. It collects nothing unless you send a report.")
-                Text("Photos access is used only to list your videos' sizes and to save the smaller copies you ask for.")
+                Text("Photos access is used only on your iPhone: to list your videos' sizes, to sort your photos into piles like duplicates and screenshots, and to save the smaller copies and still photos you ask for.")
                 Text("If you send a report from Report a problem, it includes what you wrote, your email if you add it, and the details listed on the form: app version, iPhone model, iOS version, the job and what went wrong. Never your videos, photos or their names. It goes to Shrink's support inbox (through Google, which runs it) and is used only to fix problems and answer you.")
                 Text("Purchases are handled by Apple. Shrink never sees your payment details.")
             } footer: {

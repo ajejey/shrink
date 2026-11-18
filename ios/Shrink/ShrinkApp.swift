@@ -31,7 +31,25 @@ struct ShrinkApp: App {
         case "settings"?:
             SettingsView()
         case "freeup-home"?:
-            HomeView(freeUp: .preview())
+            Self.homePreview()
+        case "cleanup-intro"?:
+            NavigationStack { PhotoCleanupScreen(model: .preview(access: .notAsked)) }
+        case "cleanup-piles"?:
+            NavigationStack { PhotoCleanupScreen(model: .preview()) }
+        case "cleanup-looking"?:
+            NavigationStack { PhotoCleanupScreen(model: .preview(looking: true)) }
+        case "cleanup-screenshots"?:
+            NavigationStack { PileView(model: .preview(), kind: .screenshots) }
+        case "cleanup-similar"?:
+            NavigationStack { PileView(model: .preview(), kind: .similar) }
+        case "cleanup-live"?:
+            NavigationStack { PileView(model: .preview(), kind: .livePhotos) }
+        case "cleanup-swipe"?:
+            SwipeReview(model: .preview(), kind: .screenshots)
+        case "cleanup-check"?:
+            NavigationStack { PhotoCleanupCheck(model: .preview()) }
+        case "cleanup-working"?, "cleanup-done"?, "cleanup-declined"?:
+            PhotoCleanupRunView(model: .previewRun(screenshot ?? ""))
         case "freeup-intro"?:
             NavigationStack { FreeUpSpaceScreen(model: .preview(access: .notAsked)) }
         case "freeup-pick"?:
@@ -57,5 +75,11 @@ struct ShrinkApp: App {
         case let state?:
             ShrinkJobView(job: .preview(state))
         }
+    }
+
+    /// Home after both scans, sharing one frozen Free up space.
+    @MainActor private static func homePreview() -> HomeView {
+        let freeUp = FreeUpSpace.preview()
+        return HomeView(freeUp: freeUp, cleanup: .preview(freeUp: freeUp))
     }
 }
