@@ -14,6 +14,8 @@ struct FreeUpSpaceRunView: View {
                     EmptyView()
                 case .working(let working):
                     progress(working)
+                case .paused(let paused):
+                    pausedView(paused)
                 case .movingOriginals:
                     VStack(spacing: 16) {
                         ProgressView().controlSize(.large)
@@ -114,12 +116,58 @@ struct FreeUpSpaceRunView: View {
             }
             .padding(12)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-            Text("Keep Shrink open. The screen stays on until it's done. Stop keeps the videos already finished.")
+            Text(model.continued != nil
+                 ? "You can switch to another app while it works. If iPhone pauses it, tap Keep going when you're back. Stop keeps the videos already finished."
+                 : "Keep Shrink open. The screen stays on until it's done. If something interrupts it, you can carry on from where it stopped. Stop keeps the videos already finished.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Spacer()
         }
+        .padding(24)
+    }
+
+    // MARK: - Paused
+
+    private func pausedView(_ paused: FreeUpSpace.Paused) -> some View {
+        let left = paused.count - paused.done
+        return VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "pause.circle.fill")
+                .font(.system(size: 72))
+                .foregroundStyle(.tint)
+            Text("Shrinking paused")
+                .font(.title.bold())
+            Text(paused.done == 0
+                 ? "None of the \(paused.count) videos is finished yet."
+                 : "\(paused.done) of \(paused.count) videos are finished.")
+                .font(.title3)
+            Text(left == 1
+                 ? "Shrink was interrupted, so 1 video is still waiting. Nothing was lost: the finished copies are saved, and every original is still in your library."
+                 : "Shrink was interrupted, so \(left) videos are still waiting. Nothing was lost: the finished copies are saved, and every original is still in your library.")
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                model.keepGoing()
+            } label: {
+                Text("Keep going").font(.headline).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            Button {
+                model.stopHere()
+            } label: {
+                Text(paused.done == 0 ? "Stop" : "Stop here").font(.headline).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            if paused.done > 0 {
+                Text("Stop here still frees the space from the finished videos.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .multilineTextAlignment(.center)
         .padding(24)
     }
 
@@ -268,6 +316,8 @@ extension FreeUpSpace {
             model.run = .finished(RunSummary(shrunk: 3, freedBytes: 0, originalsKept: true, skipped: 0, problems: []))
         case "freeup-full":
             model.run = .tooFull(TooFull(neededBytes: 940_000_000, freeBytes: 420_000_000, fitsOne: videos.last))
+        case "freeup-paused":
+            model.run = .paused(Paused(done: 2, count: 5))
         default:
             model.run = .working(Working(index: 1, count: 3, progress: 0.45, video: videos[min(1, videos.count - 1)],
                                          downloading: false))

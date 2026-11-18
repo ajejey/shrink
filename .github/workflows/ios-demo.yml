@@ -58,6 +58,7 @@ jobs:
           set +e
           xcodebuild test-without-building -project ios/Shrink.xcodeproj -scheme ShrinkDemo \
             -destination "id=$DEVICE" -derivedDataPath build -resultBundlePath demo/demo.xcresult \
+            -only-testing:ShrinkUITests/ShrinkDemoTests \
             CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= > demo/test-log.txt 2>&1
           STATUS=$?
           sleep 2

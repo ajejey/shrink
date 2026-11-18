@@ -12,10 +12,14 @@ public enum ShrinkError: LocalizedError, Equatable {
     case limitTooSmall
     /// Free up space: the copy came out no smaller than the original, so it isn't worth replacing.
     case notSmaller
+    /// Free up space: the copy didn't pass `CopyCheck`, so its original stays.
+    case copyCheckFailed(String)
     case cancelled
 
     public var errorDescription: String? {
         switch self {
+        case .copyCheckFailed(let why):
+            return "Its smaller copy didn't pass the check, so the original was kept. \(why)"
         case .notSmaller:
             return "This video is already about as small as it can be. It was left as it is."
         case .limitTooSmall:

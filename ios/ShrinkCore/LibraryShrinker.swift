@@ -23,6 +23,8 @@ public struct LibraryShrinkResult {
     /// The copy kept HDR (HEVC 10-bit with the source's HDR transfer).
     public let keptHDR: Bool
     public let usedHEVC: Bool
+    /// What the copy matched in `CopyCheck`; checked again once Photos has saved it.
+    public let expectation: CopyExpectation
 }
 
 /// Free up space: makes a smaller copy of a video for the person's own library. Unlike sending, it keeps
@@ -59,6 +61,7 @@ public final class LibraryShrinker {
         let color = Self.colorProperties(hdr: hdr, transfer: Self.transferFunction(of: formats.first))
         let bitrate = LibraryPlanner.videoBitsPerSecond(width: dimensions.width, height: dimensions.height,
                                                         frameRate: fps, hevc: options.hevc)
+        let expectation = try await CopyCheck.expectation(for: asset)
 
         var includeMetadata = true
         while true {
@@ -83,8 +86,15 @@ public final class LibraryShrinker {
             try? FileManager.default.removeItem(at: outputURL)
             throw ShrinkError.notSmaller
         }
+        // Nothing is handed on (and so no original can go) unless the copy plays like the original.
+        do {
+            try await CopyCheck.verify(AVURLAsset(url: outputURL), matches: expectation)
+        } catch {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw error
+        }
         return LibraryShrinkResult(url: outputURL, bytes: bytes, outputSize: outputSize, keptHDR: hdr,
-                                   usedHEVC: options.hevc)
+                                   usedHEVC: options.hevc, expectation: expectation)
     }
 
     // MARK: - One encode

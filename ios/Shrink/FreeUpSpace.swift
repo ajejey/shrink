@@ -26,6 +26,23 @@ final class FreeUpSpace {
         }
     }
     private var pendingList: [PendingOriginal] = PendingStore.load()
+    /// The batch being shrunk: what's left, and what happened so far. Saved after every video, so a
+    /// batch stopped by closing the app (or by iPhone) carries on with "Keep going".
+    var queue: RunQueue? {
+        get { queueValue }
+        set {
+            queueValue = newValue
+            RunQueue.save(newValue)
+        }
+    }
+    private var queueValue: RunQueue? = RunQueue.load()
+    /// iOS 26's background run for the current batch, when iPhone allowed one.
+    var continued: ContinuedRun?
+    /// Why the run task was cancelled: Stop (the rest are dropped) or a pause (they wait).
+    @ObservationIgnored var cancelReason: CancelReason?
+    /// Set when Shrink leaves the screen during a video, so a failure then means "interrupted", not "broken".
+    @ObservationIgnored var leftDuringVideo = false
+    @ObservationIgnored var appStateObservers: [NSObjectProtocol] = []
     /// Set when a finished run closes: Home pops back to itself (and may ask for a review).
     var requestsHome = false
     /// What the last finished run freed, read by Home when it closes.
@@ -49,7 +66,7 @@ final class FreeUpSpace {
     /// Everything the scan found with a known size, before deciding what's worth it.
     private var scanned: [ScannedVideo] = []
     /// A frozen copy for CI screenshots: never reads the library or the real access.
-    private var isPreview = false
+    private(set) var isPreview = false
     nonisolated private static let sizeKey = "freeUpSize"
     nonisolated private static let lastScanKey = "lastLibraryScan"
 
@@ -205,7 +222,7 @@ final class FreeUpSpace {
 }
 
 /// A video worth shrinking: how big it is now and about how big the copy will be.
-struct LibraryVideo: Identifiable, Hashable {
+struct LibraryVideo: Identifiable, Hashable, Codable {
     /// The Photos library's id for it.
     let id: String
     let created: Date?

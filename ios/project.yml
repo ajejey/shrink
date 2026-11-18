@@ -59,6 +59,9 @@ targets:
         # picker, which needs no permission.
         NSPhotoLibraryUsageDescription: Shrink finds your biggest videos so you can shrink them. Nothing leaves your iPhone.
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
+        # iOS 26: Free up space batches keep going in the background (ContinuedRun.swift). Each batch
+        # registers its own "com.useshrink.app.freeup.<time>".
+        BGTaskSchedulerPermittedIdentifiers: ["com.useshrink.app.freeup.*"]
         LSRequiresIPhoneOS: true
         UILaunchScreen: {}
         UIApplicationSceneManifest:

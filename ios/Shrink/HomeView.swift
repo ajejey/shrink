@@ -68,6 +68,7 @@ struct HomeView: View {
             }
         }
         .task {
+            freeUp.restoreInterruptedRun()
             await Store.shared.load()
             await freeUp.refreshAndScanIfNeeded()
         }

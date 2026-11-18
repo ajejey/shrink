@@ -536,7 +536,7 @@ struct FreeUpSpaceCheck: View {
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
-                Text("Keep Shrink open while it works. At the end, iPhone asks you to confirm moving the originals.")
+                Text(Self.whileItWorks)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -555,6 +555,14 @@ struct FreeUpSpaceCheck: View {
         }
         .navigationTitle("Free up space")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// iOS 26 can keep a batch going in the background (ContinuedRun); earlier iOS needs Shrink open.
+    private static var whileItWorks: String {
+        if #available(iOS 26.0, *) {
+            return "You can switch to another app while it works. If iPhone pauses it, tap Keep going. At the end, iPhone asks you to confirm moving the originals."
+        }
+        return "Keep Shrink open while it works. At the end, iPhone asks you to confirm moving the originals."
     }
 
     private func fact(_ icon: String, _ title: String, _ detail: String) -> some View {

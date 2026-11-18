@@ -12,10 +12,11 @@ enum TestMedia {
 
     /// A video with a moving gradient plus a moving block of noise (hard to compress, like real footage),
     /// and a 440 Hz tone when `audio` is on. `rotated` stores it sideways with a 90° transform, the way
-    /// iPhones store portrait video. `location` adds a filming location to the metadata.
+    /// iPhones store portrait video. `location` adds a filming location to the metadata. `black` paints
+    /// every frame black instead (a copy whose picture was lost, or a video filmed in the dark).
     static func makeVideo(
         width: Int, height: Int, seconds: Double, fps: Int32,
-        audio: Bool, rotated: Bool = false, location: Bool = false, bitrate: Int = 20_000_000
+        audio: Bool, rotated: Bool = false, location: Bool = false, bitrate: Int = 20_000_000, black: Bool = false
     ) throws -> URL {
         let url = temporaryURL("mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -66,7 +67,7 @@ enum TestMedia {
         guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         writer.startSession(atSourceTime: .zero)
 
-        let painter = FramePainter(width: width, height: height)
+        let painter = FramePainter(width: width, height: height, black: black)
         let frames = Int(seconds * Double(fps))
         var audioFramesWritten = 0
         for frame in 0..<frames {
@@ -190,10 +191,12 @@ private final class FramePainter {
     private let gradient: [UInt8]   // two frame-widths of BGRA, read at a moving offset
     private let noise: [UInt8]      // noise rows for the moving block
     private let blockWidth: Int, blockHeight: Int, noiseRowBytes: Int
+    private let black: Bool
 
-    init(width: Int, height: Int) {
+    init(width: Int, height: Int, black: Bool = false) {
         self.width = width
         self.height = height
+        self.black = black
         var row = [UInt8](repeating: 255, count: width * 2 * 4)
         for x in 0..<(width * 2) {
             row[x * 4] = UInt8(x % 256)
@@ -214,6 +217,10 @@ private final class FramePainter {
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let base = CVPixelBufferGetBaseAddress(buffer)?.assumingMemoryBound(to: UInt8.self) else { return }
         let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
+        if black {
+            memset(base, 0, bytesPerRow * height)
+            return
+        }
         let gradientOffset = ((frame * 8) % width) * 4
         let blockX = (frame * 6) % (width - blockWidth)
         let blockY = (frame * 3) % (height - blockHeight)
