@@ -5,6 +5,9 @@ import UIKit
 /// its URL from the SHRINK_REPORT_URL build setting (a GitHub secret, so it isn't in the public code).
 /// Local and test builds have none, and every "Report a problem" button stays hidden then.
 enum SupportContact {
+    /// Shown when a report can't be sent, and on the support page.
+    static let email = "useshrink.support@gmail.com"
+
     static let reportURL: URL? = {
         guard let value = Bundle.main.object(forInfoDictionaryKey: "ShrinkReportURL") as? String,
               value.hasPrefix("https://"), let url = URL(string: value) else { return nil }
@@ -168,6 +171,9 @@ struct ReportProblemView: View {
                 Section {
                     Text("Couldn't send it. Check your connection and tap Send again.")
                         .foregroundStyle(.red)
+                    // Plain, selectable text: the share sheet can't open the mail app.
+                    Text("Or email it to \(SupportContact.email)")
+                        .textSelection(.enabled)
                 }
             }
         }
