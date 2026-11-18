@@ -4,9 +4,11 @@
 //
 // Set up once, signed in to the support Google account:
 //   1. Make a Google Sheet called "Shrink reports". Extensions > Apps Script. Replace Code.gs with this file.
-//   2. Deploy > New deployment > Select type: Web app. Execute as: Me. Who has access: Anyone. Deploy,
-//      then allow what it asks for (send email as you, edit this sheet).
-//   3. Put the Web app URL (https://script.google.com/macros/s/…/exec) in the GitHub secret
+//      (With several Google accounts in one browser that menu can fail. Then make the project at
+//      script.google.com/u/<n>/home instead and add the sheet's ID as the Script Property SHEET_ID.)
+//   2. Run setup() once from the editor and allow what it asks for (send email as you, edit the sheet).
+//   3. Deploy > New deployment > Select type: Web app. Execute as: Me. Who has access: Anyone. Deploy.
+//   4. Put the Web app URL (https://script.google.com/macros/s/…/exec) in the GitHub secret
 //      SHRINK_REPORT_URL. Release builds read it from there, so the URL isn't in the public code.
 // After changing this file: Deploy > Manage deployments > Edit > Version: New version. The URL stays the same.
 // Opening the URL in a browser shows {"ok":true} when it's live.
@@ -33,8 +35,7 @@ function doPost(e) {
   }
   if (report.app !== 'Shrink' || !r.message) return reply(false)
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0]
-  if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS)
+  const sheet = reportSheet()
   sheet.appendRow([new Date()].concat([r.message, r.replyTo, r.version, r.device, r.ios, r.job, r.error].map(asText)))
 
   if (allowEmail()) {
@@ -62,9 +63,25 @@ function doGet() {
   return reply(true)
 }
 
-// A cell starting with = + - or @ would run as a formula; a leading ' keeps it as plain text.
+// Run once from the editor: checks the sheet, writes its headers and asks for the permissions.
+function setup() {
+  Logger.log('Reports go to ' + reportSheet().getParent().getUrl())
+}
+
+// The sheet in the Script Property SHEET_ID, or else the sheet this script is attached to.
+function reportSheet() {
+  const id = PropertiesService.getScriptProperties().getProperty('SHEET_ID')
+  const book = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet()
+  if (!book) throw new Error('No sheet: add its ID as the Script Property SHEET_ID')
+  const sheet = book.getSheets()[0]
+  if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS)
+  return sheet
+}
+
+// Every cell goes in as plain text: a leading ' stops Sheets turning "18.10" into 18.1 or running "=…"
+// as a formula. Sheets hides the ' itself.
 function asText(value) {
-  return /^[=+\-@]/.test(value) ? "'" + value : value
+  return value ? "'" + value : value
 }
 
 function allowEmail() {
