@@ -52,6 +52,8 @@ extension FreeUpSpace {
         /// Already about as small as they can be; left alone.
         let skipped: Int
         let problems: [String]
+        /// Of the originals moved, how many were photos (Live Photos whose stills photo cleanup saved).
+        var photos = 0
     }
 
     struct TooFull {
@@ -328,13 +330,15 @@ extension FreeUpSpace {
         }
         run = .movingOriginals
         do {
+            var photos = 0
+            assets.enumerateObjects { asset, _, _ in if asset.mediaType == .image { photos += 1 } }
             try await Self.deleteAssets(assets)
             let freed = waiting.reduce(Int64(0)) { $0 + $1.savedBytes }
             FreeAllowance.use(freed)
             pendingOriginals = []
             removeFromList(Set(ids))
             run = .finished(RunSummary(shrunk: waiting.count, freedBytes: freed, originalsKept: false,
-                                       skipped: skipped, problems: problems))
+                                       skipped: skipped, problems: problems, photos: photos))
         } catch {
             removeFromList(Set(ids))
             run = .finished(RunSummary(shrunk: waiting.count, freedBytes: 0, originalsKept: true,

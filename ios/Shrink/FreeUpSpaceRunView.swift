@@ -198,7 +198,7 @@ struct FreeUpSpaceRunView: View {
                         .foregroundStyle(.green)
                     Text("Space freed")
                         .font(.largeTitle.bold())
-                    Text("About \(SizeFormat.string(summary.freedBytes)) from \(summary.shrunk == 1 ? "1 video" : "\(summary.shrunk) videos")")
+                    Text("About \(SizeFormat.string(summary.freedBytes)) from \(Self.originals(summary))")
                         .font(.title3)
                     Text("It comes back when Recently Deleted is emptied.")
                         .foregroundStyle(.secondary)
@@ -241,6 +241,14 @@ struct FreeUpSpaceRunView: View {
             .padding(24)
             .padding(.top, 24)
         }
+    }
+
+    /// "3 videos", "1 photo", "4 videos and photos".
+    private static func originals(_ summary: FreeUpSpace.RunSummary) -> String {
+        let count = summary.shrunk
+        if summary.photos == 0 { return count == 1 ? "1 video" : "\(count) videos" }
+        if summary.photos == count { return count == 1 ? "1 photo" : "\(count) photos" }
+        return "\(count) videos and photos"
     }
 
     private var openPhotosButton: some View {

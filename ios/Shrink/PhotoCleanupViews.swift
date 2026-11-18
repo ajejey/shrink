@@ -387,12 +387,23 @@ struct PhotoTile: View {
                     if isPicked { Color.black.opacity(0.28) }
                 }
                 .overlay(alignment: .topTrailing) {
-                    Image(systemName: isPicked ? (kind == .livePhotos ? "livephoto.slash" : "checkmark.circle.fill") : "circle")
-                        .font(.title3.weight(.semibold))
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, isPicked ? Color.accentColor : Color.black.opacity(0.25))
-                        .shadow(radius: 2)
-                        .padding(6)
+                    if isPicked && kind == .livePhotos {
+                        // "Photo only": the Live Photo mark crossed out, on a solid badge so it reads at a glance.
+                        Image(systemName: "livephoto.slash")
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 26, height: 26)
+                            .background(Color.accentColor, in: Circle())
+                            .shadow(radius: 2)
+                            .padding(6)
+                    } else {
+                        Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
+                            .font(.title3.weight(.semibold))
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, isPicked ? Color.accentColor : Color.black.opacity(0.25))
+                            .shadow(radius: 2)
+                            .padding(6)
+                    }
                 }
                 .overlay(alignment: .bottomLeading) {
                     if item.isVideo {
@@ -572,9 +583,10 @@ struct PhotoCleanupCheck: View {
                             .overlay(alignment: .bottomTrailing) {
                                 if stillIDs.contains(item.id) {
                                     Image(systemName: "livephoto.slash")
-                                        .font(.caption.weight(.bold))
+                                        .font(.caption2.weight(.bold))
                                         .foregroundStyle(.white)
-                                        .shadow(radius: 2)
+                                        .frame(width: 20, height: 20)
+                                        .background(Color.accentColor, in: Circle())
                                         .padding(4)
                                 }
                             }

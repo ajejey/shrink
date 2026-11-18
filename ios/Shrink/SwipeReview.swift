@@ -26,6 +26,8 @@ struct SwipeReview: View {
 
     /// "Delete", or "Photo only" for Live Photos.
     private var goWord: String { kind == .livePhotos ? "Photo only" : "Delete" }
+    /// How a marked photo is described: "6 to delete", "6 photo only".
+    private var markedWord: String { kind == .livePhotos ? "photo only" : "to delete" }
     private var goIcon: String { kind == .livePhotos ? "livephoto.slash" : "trash" }
 
     var body: some View {
@@ -80,7 +82,7 @@ struct SwipeReview: View {
         VStack(spacing: 4) {
             Text(MonthTitle.string(month < sections.count ? sections[month].start : nil))
                 .font(.title2.bold())
-            Text("\(index + 1) of \(monthItems.count) · \(pickedThisMonth) marked \(goWord.lowercased())")
+            Text("\(index + 1) of \(monthItems.count) · \(pickedThisMonth) \(markedWord)")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -99,7 +101,7 @@ struct SwipeReview: View {
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if model.isPicked(item, in: kind) {
-                        Label("Marked \(goWord.lowercased())", systemImage: goIcon)
+                        Label(kind == .livePhotos ? "Photo only" : "To delete", systemImage: goIcon)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10)
@@ -190,7 +192,7 @@ struct SwipeReview: View {
                 .foregroundStyle(.green)
             Text("\(title) done")
                 .font(.title.bold())
-            Text("\(marked) marked \(goWord.lowercased()), \(monthItems.count - marked) kept")
+            Text("\(marked) \(markedWord), \(monthItems.count - marked) kept")
                 .foregroundStyle(.secondary)
             Spacer()
             if month + 1 < sections.count {
