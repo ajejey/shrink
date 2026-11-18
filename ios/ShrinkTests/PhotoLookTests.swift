@@ -126,8 +126,28 @@ final class PhotoLookTests: XCTestCase {
         }
         let toNext = a.distance(to: nextShot), toOther = a.distance(to: other)
         print("PHOTO-LOOK: feature print distance same \(a.distance(to: same)), next shot \(toNext), other scene \(toOther), \(a.bytes.count) values")
+        if toOther < 0.05 { throw XCTSkip("This simulator's Vision gives every picture the same print (a stand-in)") }
         XCTAssertEqual(a.distance(to: same), 0, accuracy: 0.02)
         XCTAssertLessThan(toNext, toOther)
+    }
+
+    /// Where Vision gives every picture the same answer, the app mustn't use it.
+    func testAStandInVisionIsSwitchedOff() throws {
+        let raw: (FeatureVector, FeatureVector)
+        do {
+            raw = (try PhotoLook.computeFeatureVector(PhotoLook.calibrationPicture(stripes: true), orientation: .up),
+                   try PhotoLook.computeFeatureVector(PhotoLook.calibrationPicture(stripes: false), orientation: .up))
+        } catch {
+            throw XCTSkip("Vision feature prints don't run on this simulator: \(error)")
+        }
+        PhotoLook.checkVision()
+        let distance = raw.0.distance(to: raw.1)
+        print("PHOTO-LOOK: calibration distance \(distance)")
+        if distance < 0.05 {
+            XCTAssertThrowsError(try PhotoLook.featureVector(scene(8)), "a stand-in Vision is switched off")
+        } else {
+            XCTAssertNoThrow(try PhotoLook.featureVector(scene(8)), "a real Vision stays on")
+        }
     }
 
     func testVisionQualityScoreIsInRange() throws {
@@ -139,6 +159,9 @@ final class PhotoLookTests: XCTestCase {
             dark = try PhotoLook.quality(black())
         } catch {
             throw XCTSkip("Vision's quality score doesn't run on this simulator: \(error)")
+        }
+        if let sharp, let dark, abs(sharp.score - dark.score) < 0.0001 {
+            throw XCTSkip("This simulator's Vision gives every picture the same score (a stand-in)")
         }
         for (name, quality) in [("sharp", sharp), ("blurred", soft), ("dark", dark)] {
             let value = try XCTUnwrap(quality, name)

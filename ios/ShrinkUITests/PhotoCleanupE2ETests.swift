@@ -149,7 +149,8 @@ final class PhotoCleanupE2ETests: XCTestCase {
         app.launchArguments = ["-e2e", mode]
         app.launch()
         let status = app.staticTexts["e2e-status"]
-        let deadline = Date().addingTimeInterval(120)
+        // Saving the Live Photo takes the simulator's Photos about two minutes.
+        let deadline = Date().addingTimeInterval(420)
         while Date() < deadline {
             for label in ["Allow Full Access", "Allow Access to All Photos", "Allow"] {
                 let allow = springboard.buttons[label]

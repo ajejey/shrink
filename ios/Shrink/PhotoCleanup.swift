@@ -374,6 +374,7 @@ final class PhotoCleanup {
     /// through Vision, and the original file's camera details when it's on the iPhone. Nothing is
     /// downloaded from iCloud for this.
     nonisolated private static func look(at ids: [String], surelyCamera: Set<String>) -> [String: LookResult] {
+        PhotoLook.checkVision()
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)
         let manager = PHImageManager.default()
         let imageOptions = PHImageRequestOptions()

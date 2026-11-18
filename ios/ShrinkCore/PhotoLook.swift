@@ -9,12 +9,13 @@ import Vision
 public enum PhotoLook {
     public enum LookError: LocalizedError {
         case noResult
-        /// Vision didn't answer in time (or stalled earlier, so it isn't asked again this session).
+        /// Vision didn't answer in time, or gives every picture the same answer (the simulator's stand-in),
+        /// so it isn't asked again this session.
         case stalled
         public var errorDescription: String? {
             switch self {
             case .noResult: "Vision returned nothing for this picture."
-            case .stalled: "Vision didn't answer in time."
+            case .stalled: "Vision isn't available."
             }
         }
     }
@@ -41,6 +42,42 @@ public enum PhotoLook {
     }
 
     enum VisionKind: Hashable { case featurePrint, quality }
+
+    /// Once per session, before Vision's answers are used: two very different made-up pictures must get
+    /// different answers. The iPhone simulator runs a stand-in for Vision's models that gives every
+    /// picture the same print and the same score; trusting it would put every photo in Similar shots
+    /// and Blurry. A stand-in is switched off like a stall.
+    public static func checkVision() {
+        guard VisionHealth.shared.startCheck() else { return }
+        let stripes = calibrationPicture(stripes: true), spot = calibrationPicture(stripes: false)
+        if let a = try? featureVector(stripes), let b = try? featureVector(spot), a.distance(to: b) < 0.05 {
+            VisionHealth.shared.markStalled(.featurePrint)
+        }
+        if #available(iOS 18.0, *), let a = try? quality(stripes), let b = try? quality(spot),
+           abs(a.score - b.score) < 0.0001, a.isUtility == b.isUtility {
+            VisionHealth.shared.markStalled(.quality)
+        }
+    }
+
+    /// Black and white stripes, or a red spot on yellow.
+    static func calibrationPicture(stripes: Bool) -> CGImage {
+        let side = 256
+        let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        if stripes {
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+            context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+            for x in stride(from: 0, to: side, by: 32) { context.fill(CGRect(x: x, y: 0, width: 16, height: side)) }
+        } else {
+            context.setFillColor(CGColor(red: 1, green: 0.85, blue: 0.1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+            context.setFillColor(CGColor(red: 0.85, green: 0.1, blue: 0.1, alpha: 1))
+            context.fillEllipse(in: CGRect(x: 64, y: 64, width: 128, height: 128))
+        }
+        return context.makeImage()!
+    }
 
     /// A 64-bit difference hash: the picture shrunk to 9×8 grey pixels, one bit per pair of
     /// neighbours. The same pixels always give the same hash.
@@ -96,7 +133,7 @@ public enum PhotoLook {
         try withinTimeout(.featurePrint) { try computeFeatureVector(image, orientation: orientation) }
     }
 
-    private static func computeFeatureVector(_ image: CGImage,
+    static func computeFeatureVector(_ image: CGImage,
                                              orientation: CGImagePropertyOrientation) throws -> FeatureVector {
         let request = VNGenerateImageFeaturePrintRequest()
         #if targetEnvironment(simulator)
@@ -140,7 +177,7 @@ public enum PhotoLook {
     }
 
     @available(iOS 18.0, *)
-    private static func computeQuality(_ image: CGImage, orientation: CGImagePropertyOrientation) throws -> Quality {
+    static func computeQuality(_ image: CGImage, orientation: CGImagePropertyOrientation) throws -> Quality {
         let request = VNCalculateImageAestheticsScoresRequest()
         try VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:]).perform([request])
         guard let result = request.results?.first else { throw LookError.noResult }
@@ -176,6 +213,16 @@ final class VisionHealth: @unchecked Sendable {
     static let shared = VisionHealth()
     private let lock = NSLock()
     private var stalled: Set<PhotoLook.VisionKind> = []
+    private var checked = false
+
+    /// True the first time only.
+    func startCheck() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !checked else { return false }
+        checked = true
+        return true
+    }
 
     func isStalled(_ kind: PhotoLook.VisionKind) -> Bool {
         lock.lock()
