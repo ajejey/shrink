@@ -107,6 +107,17 @@ final class QuickJob {
     var title: String { kind.title }
     var failedTitle: String { kind.failedTitle }
 
+    /// What a saved frame takes from the video, only what the video really says ("with the video's
+    /// date and place"); nil when it says neither.
+    var keptFromVideo: String? {
+        switch (facts.created != nil, facts.latitude != nil) {
+        case (true, true): return "with the video's date and place"
+        case (true, false): return "with the video's date"
+        case (false, true): return "with the video's place"
+        case (false, false): return nil
+        }
+    }
+
     var isFinished: Bool {
         switch phase {
         case .done, .failed: return true
@@ -347,6 +358,8 @@ final class QuickJob {
         let sample = FileManager.default.temporaryDirectory.appendingPathComponent("sample-video.mp4")
         func choose(_ kind: Kind, then next: ((PickedVideo) async throws -> Void)? = nil) {
             job.kind = kind
+            job.facts = QuickExtras.Facts(created: Date(timeIntervalSince1970: 1_794_823_200),
+                                          latitude: 48.8584, longitude: 2.2945)
             job.task = Task {
                 do {
                     let video = try await PickedVideo.examine(sample)

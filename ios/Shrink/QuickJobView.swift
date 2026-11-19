@@ -15,7 +15,9 @@ struct QuickJobView: View {
             Group {
                 if case .choosing(let video) = job.phase {
                     if job.kind == .frame {
-                        FrameChooser(video: video) { seconds in job.saveFrame(at: seconds) }
+                        FrameChooser(video: video, note: "It goes into Photos\(job.keptFromVideo.map { " " + $0 } ?? "").") { seconds in
+                            job.saveFrame(at: seconds)
+                        }
                     } else {
                         GIFChooser(video: video) { part, size in job.makeGIF(part: part, size: size) }
                     }
@@ -109,7 +111,8 @@ struct QuickJobView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             Text(job.saveState == .saved ? "Saved to Photos" : "Frame ready")
                 .font(.largeTitle.bold())
-            Text(job.saveState == .saved ? "\(result.detail), with the video's date and place" : result.detail)
+            Text(job.saveState == .saved ? [result.detail, job.keptFromVideo].compactMap { $0 }.joined(separator: ", ")
+                                         : result.detail)
                 .font(.title3)
                 .multilineTextAlignment(.center)
         case .sound, .mute:
@@ -232,6 +235,8 @@ struct QuickJobView: View {
 /// Slide to the moment, nudge a frame at a time, then save that exact frame.
 struct FrameChooser: View {
     let video: PickedVideo
+    /// "It goes into Photos with the video's date and place."
+    let note: String
     let onSave: (Double) -> Void
 
     @State private var position: Double
@@ -239,8 +244,9 @@ struct FrameChooser: View {
     /// One frame's length (from the video's frame rate).
     @State private var step = 1.0 / 30
 
-    init(video: PickedVideo, onSave: @escaping (Double) -> Void) {
+    init(video: PickedVideo, note: String, onSave: @escaping (Double) -> Void) {
         self.video = video
+        self.note = note
         self.onSave = onSave
         _position = State(initialValue: video.duration / 2)
     }
@@ -280,7 +286,7 @@ struct FrameChooser: View {
 
             Spacer(minLength: 0)
 
-            Text("It goes into Photos with the video's date and place.")
+            Text(note)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
