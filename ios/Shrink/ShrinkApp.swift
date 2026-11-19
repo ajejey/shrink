@@ -72,6 +72,8 @@ struct ShrinkApp: App {
                                                     problem: "The video couldn't be read."))
         case "report-sent"?:
             ReportProblemView(report: ProblemReport(), showsSent: true)
+        case let state? where state.hasPrefix("quick-"):
+            QuickJobView(job: .preview(state))
         case let state?:
             ShrinkJobView(job: .preview(state))
         }

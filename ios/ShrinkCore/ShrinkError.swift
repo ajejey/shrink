@@ -14,10 +14,18 @@ public enum ShrinkError: LocalizedError, Equatable {
     case notSmaller
     /// Free up space: the copy didn't pass `CopyCheck`, so its original stays.
     case copyCheckFailed(String)
+    /// Get the sound from a video: there's no sound in it.
+    case noSound
+    /// A quick extra (sound, muted copy, frame, GIF) couldn't be made.
+    case couldNotMake(String)
     case cancelled
 
     public var errorDescription: String? {
         switch self {
+        case .noSound:
+            return "This video has no sound in it."
+        case .couldNotMake(let why):
+            return why
         case .copyCheckFailed(let why):
             return "Its smaller copy didn't pass the check, so the original was kept. \(why)"
         case .notSmaller:

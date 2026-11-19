@@ -58,6 +58,7 @@ targets:
         # Free up space reads the library, saves the smaller copies and still photos, and sorts photos
         # into piles. Sending uses the Photos picker, which needs no permission.
         NSPhotoLibraryUsageDescription: Shrink finds your biggest videos and the photos you may not need, so you can free up space. Nothing leaves your iPhone.
+        NSPhotoLibraryAddUsageDescription: Shrink saves the frames, GIFs and muted videos you make into your library.
         PHPhotoLibraryPreventAutomaticLimitedAccessAlert: true
         # iOS 26: Free up space batches keep going in the background (ContinuedRun.swift). Each batch
         # registers its own "com.useshrink.app.freeup.<time>".

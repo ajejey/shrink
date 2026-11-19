@@ -16,6 +16,10 @@ struct HomeView: View {
     @State private var showFreeUp = false
     @State private var cleanup: PhotoCleanup
     @State private var showCleanup = false
+    @State private var quick = QuickJob()
+    @State private var quickKind: QuickJob.Kind?
+    @State private var showQuickPicker = false
+    @State private var quickItem: PhotosPickerItem?
     private let router = ShortcutRouter.shared
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
@@ -38,6 +42,18 @@ struct HomeView: View {
                              onAllPlaces: { showPlaces = true })
                     FreeUpSpaceCard(model: freeUp, cleanup: cleanup,
                                     onOpen: { showFreeUp = true }, onOpenCleanup: { showCleanup = true })
+                    QuickJobsCard(onPick: pickQuick)
+                        // On the card, apart from the send job's picker and cover on the stack.
+                        .photosPicker(isPresented: $showQuickPicker, selection: $quickItem,
+                                      matching: quickKind?.pickerFilter ?? .videos, preferredItemEncoding: .current)
+                        .onChange(of: quickItem) { _, item in
+                            guard let item, let kind = quickKind else { return }
+                            quickItem = nil
+                            quick.open(item: item, kind: kind)
+                        }
+                        .fullScreenCover(isPresented: $quick.isShowing, onDismiss: quickClosed) {
+                            QuickJobView(job: quick)
+                        }
                     Text("Everything happens on your iPhone. Nothing is uploaded.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -128,6 +144,16 @@ struct HomeView: View {
         showPicker = true
     }
 
+    private func pickQuick(_ kind: QuickJob.Kind) {
+        quickKind = kind
+        showQuickPicker = true
+    }
+
+    /// After a quick extra's screen has closed: "Pick another video" opens the Photos picker again.
+    private func quickClosed() {
+        if quick.takeWantsAnother() { showQuickPicker = true }
+    }
+
     /// Siri or Spotlight asked for a job: open its screen.
     private func openShortcut() {
         guard let request = router.request else { return }
@@ -210,6 +236,57 @@ private struct SendCard: View {
             .frame(minHeight: 44)
             .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
             .contentShape(Capsule())
+    }
+}
+
+/// The quick extras, each a plain job in the person's words.
+private struct QuickJobsCard: View {
+    let onPick: (QuickJob.Kind) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("More with a video")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+            ForEach(QuickJob.Kind.allCases) { kind in
+                Button {
+                    onPick(kind)
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: kind.symbol)
+                            .font(.title3)
+                            .foregroundStyle(.tint)
+                            .frame(width: 28)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kind.title)
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            Text(kind.detail)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                if kind != QuickJob.Kind.allCases.last {
+                    Divider().padding(.leading, 42)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
