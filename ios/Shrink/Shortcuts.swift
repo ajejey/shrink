@@ -1,9 +1,9 @@
 import AppIntents
 import SwiftUI
 
-/// "Shrink a video for Discord", "Free up space" and "Clean up photos", in Siri and Spotlight with no
-/// setup. Each opens the app at the right place: the Photos picker for that destination, Free up space,
-/// or Clean up photos.
+/// "Shrink a video for Discord", "Free up space", "Clean up photos" and the quick extras ("Make a GIF"),
+/// in Siri and Spotlight with no setup. Each opens the app at the right place: the Photos picker for
+/// that destination or extra, Free up space, or Clean up photos.
 struct ShrinkShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -33,6 +33,43 @@ struct ShrinkShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Clean up photos",
             systemImageName: "photo.stack"
+        )
+        AppShortcut(
+            intent: MakeGIFIntent(),
+            phrases: [
+                "Make a GIF with \(.applicationName)",
+                "Turn a video into a GIF with \(.applicationName)",
+                "Make a GIF from a Live Photo with \(.applicationName)",
+            ],
+            shortTitle: "Make a GIF",
+            systemImageName: "square.stack.3d.forward.dottedline"
+        )
+        AppShortcut(
+            intent: MuteVideoIntent(),
+            phrases: [
+                "Mute a video with \(.applicationName)",
+                "Remove the sound from a video with \(.applicationName)",
+            ],
+            shortTitle: "Mute a video",
+            systemImageName: "speaker.slash"
+        )
+        AppShortcut(
+            intent: GetSoundIntent(),
+            phrases: [
+                "Get the sound from a video with \(.applicationName)",
+                "Extract the audio from a video with \(.applicationName)",
+            ],
+            shortTitle: "Get the sound",
+            systemImageName: "waveform"
+        )
+        AppShortcut(
+            intent: SaveFrameIntent(),
+            phrases: [
+                "Save a frame from a video with \(.applicationName)",
+                "Get a photo from a video with \(.applicationName)",
+            ],
+            shortTitle: "Save a frame",
+            systemImageName: "photo"
         )
     }
 }
@@ -100,6 +137,54 @@ struct CleanUpPhotosIntent: AppIntent {
     }
 }
 
+struct MakeGIFIntent: AppIntent {
+    static var title: LocalizedStringResource = "Make a GIF"
+    static var description = IntentDescription("Turn part of a video or a Live Photo into a GIF.")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        ShortcutRouter.shared.request = .quick("gif")
+        return .result()
+    }
+}
+
+struct MuteVideoIntent: AppIntent {
+    static var title: LocalizedStringResource = "Mute a video"
+    static var description = IntentDescription("Make a copy of a video with no sound.")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        ShortcutRouter.shared.request = .quick("mute")
+        return .result()
+    }
+}
+
+struct GetSoundIntent: AppIntent {
+    static var title: LocalizedStringResource = "Get the sound from a video"
+    static var description = IntentDescription("Save a video's sound as an audio file.")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        ShortcutRouter.shared.request = .quick("sound")
+        return .result()
+    }
+}
+
+struct SaveFrameIntent: AppIntent {
+    static var title: LocalizedStringResource = "Save a frame as a photo"
+    static var description = IntentDescription("Pick a moment in a video and save it to Photos.")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        ShortcutRouter.shared.request = .quick("frame")
+        return .result()
+    }
+}
+
 /// Hands a shortcut to Home, which opens the right screen.
 @Observable
 @MainActor
@@ -111,6 +196,8 @@ final class ShortcutRouter {
         case send(String)
         case freeUp
         case cleanUp
+        /// A quick extra: QuickJob.Kind's raw value ("gif", "mute", "sound", "frame").
+        case quick(String)
     }
 
     var request: Request?

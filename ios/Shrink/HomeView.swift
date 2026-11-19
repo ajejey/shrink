@@ -165,6 +165,8 @@ struct HomeView: View {
             showFreeUp = true
         case .cleanUp:
             showCleanup = true
+        case .quick(let raw):
+            if let kind = QuickJob.Kind(rawValue: raw) { pickQuick(kind) }
         }
     }
 
