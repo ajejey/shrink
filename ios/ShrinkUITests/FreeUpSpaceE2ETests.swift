@@ -100,7 +100,8 @@ final class FreeUpSpaceE2ETests: XCTestCase {
         let alert = [app, springboard].map { $0.alerts.firstMatch }.first { $0.exists }
         print("E2E: delete prompt: \(alert?.label ?? "?") / \(alert?.staticTexts.allElementsBoundByIndex.map(\.label) ?? [])")
         shot(app, "delete-prompt")
-        deleteButton.tap()
+        _ = deleteButton
+        confirmDelete(app)
 
         // 6. The result.
         let freed = app.staticTexts["Space freed"]
@@ -154,6 +155,23 @@ final class FreeUpSpaceE2ETests: XCTestCase {
             if button.exists { return button }
         }
         return nil
+    }
+
+    /// Taps Delete until iOS's prompt is really gone. A tap can be swallowed while the prompt is still
+    /// settling, which left a batch waiting on "Moving the originals…" with the prompt still up.
+    private func confirmDelete(_ app: XCUIApplication) {
+        for attempt in 1...5 {
+            guard let button = deletePromptButton(app) else { return }
+            if attempt > 1 { print("E2E: the delete prompt is still up; tapping Delete again (\(attempt))") }
+            if attempt.isMultiple(of: 2), springboard.alerts.buttons["Delete"].exists {
+                springboard.alerts.buttons["Delete"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            } else {
+                button.tap()
+            }
+            let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: button)
+            if XCTWaiter().wait(for: [gone], timeout: 5) == .completed, deletePromptButton(app) == nil { return }
+        }
+        XCTFail("iOS's delete prompt stayed up after 5 taps on Delete")
     }
 
     private func shot(_ app: XCUIApplication, _ name: String) {
