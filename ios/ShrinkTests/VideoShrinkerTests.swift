@@ -142,9 +142,10 @@ final class VideoShrinkerTests: XCTestCase {
         let usualItems = try await AVURLAsset(url: usual).load(.metadata)
         XCTAssertFalse(usualItems.contains(where: isCameraModel), "the usual settings leave the camera out")
 
-        let all = TestMedia.temporaryURL("mp4")
-        _ = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: all,
-                                             options: .init(targetBytes: 1_000_000, keepsAllDetails: true))
+        let options = VideoShrinkOptions(targetBytes: 1_000_000, keepsAllDetails: true)
+        XCTAssertEqual(options.fileExtension, "mov", "MP4 can't hold the camera, so all the details make a .mov")
+        let all = TestMedia.temporaryURL(options.fileExtension)
+        _ = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: all, options: options)
         let allItems = try await AVURLAsset(url: all).load(.metadata)
         XCTAssertTrue(allItems.contains(where: isCameraModel), "all the details keep the camera")
         XCTAssertTrue(allItems.contains(where: isCreationDate), "and the date")
@@ -164,39 +165,6 @@ final class VideoShrinkerTests: XCTestCase {
         XCTAssertLessThanOrEqual(result.bytes, 25_000_000)
         XCTAssertEqual(Int(max(result.outputSize.width, result.outputSize.height)), 640, "keeps its own size")
         try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
-    }
-
-    /// A probe, not a check: prints which kinds of metadata an MP4 written by AVAssetWriter keeps
-    /// (grep the test log for MP4-META), so the shrinker writes the kinds that survive. Never fails.
-    func testProbeWhichMetadataAnMP4Keeps() async throws {
-        func item(_ identifier: AVMetadataIdentifier, _ value: String) -> AVMetadataItem {
-            let item = AVMutableMetadataItem()
-            item.identifier = identifier
-            item.value = value as NSString
-            item.dataType = kCMMetadataBaseDataType_UTF8 as String
-            return item
-        }
-        let date = "2026-11-16T10:00:00+0000", place = "+37.3349-122.0090+010.000/"
-        let kinds: [(String, [AVMetadataItem])] = [
-            ("quicktime-metadata", [item(.quickTimeMetadataCreationDate, date), item(.quickTimeMetadataLocationISO6709, place),
-                                    item(.quickTimeMetadataModel, "iPhone")]),
-            ("common", [item(.commonIdentifierCreationDate, date), item(.commonIdentifierLocation, place),
-                        item(.commonIdentifierModel, "iPhone")]),
-            ("quicktime-userdata", [item(.quickTimeUserDataCreationDate, date), item(.quickTimeUserDataLocationISO6709, place),
-                                    item(.quickTimeUserDataModel, "iPhone")]),
-            ("iso-userdata", [item(.isoUserDataCopyright, "Test")]),
-        ]
-        for (name, items) in kinds {
-            do {
-                let url = try TestMedia.makeVideo(width: 320, height: 240, seconds: 1, fps: 10, audio: false,
-                                                  fileType: .mp4, metadata: items)
-                let back = try await AVURLAsset(url: url).load(.metadata)
-                let described = back.map { "\($0.identifier?.rawValue ?? "?") (common: \($0.commonKey?.rawValue ?? "-"))" }
-                print("MP4-META \(name): wrote \(items.count), read back \(back.count): \(described)")
-            } catch {
-                print("MP4-META \(name): FAILED \(error.localizedDescription)")
-            }
-        }
     }
 
     // MARK: - Trim

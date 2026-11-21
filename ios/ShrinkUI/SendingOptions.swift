@@ -237,7 +237,7 @@ struct SendingOptionsView: View {
                 Section {
                     Toggle("Keep all the details", isOn: $allDetails)
                 } footer: {
-                    Text("Camera, lens, date and the rest of the file's details. The place it was taken still follows Remove location in Settings.")
+                    Text("Camera, lens, date and the rest of the file's details. Videos come out as .mov files to hold them all; a few websites only take .mp4. The place still follows Remove location in Settings.")
                 }
             }
             .disabled(!isPro)

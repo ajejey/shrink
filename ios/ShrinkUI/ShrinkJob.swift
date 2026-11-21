@@ -120,7 +120,7 @@ final class ShrinkJob {
         task = Task {
             do {
                 let output = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("Shrink-\(UUID().uuidString.prefix(6)).mp4")
+                    .appendingPathComponent("Shrink-\(UUID().uuidString.prefix(6)).\(options.fileExtension)")
                 let result = try await VideoShrinker().shrink(
                     asset: AVURLAsset(url: picked.url), to: output, options: options
                 ) { [weak self] value in
@@ -222,7 +222,8 @@ final class ShrinkJob {
     private static func removeOldResults() {
         let folder = FileManager.default.temporaryDirectory
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        for name in names where name.hasPrefix("Shrink-") && (name.hasSuffix(".mp4") || name.hasSuffix(".jpg")) {
+        for name in names where name.hasPrefix("Shrink-")
+            && (name.hasSuffix(".mp4") || name.hasSuffix(".mov") || name.hasSuffix(".jpg")) {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
         }
     }

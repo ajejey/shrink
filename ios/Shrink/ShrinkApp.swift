@@ -10,10 +10,21 @@ struct ShrinkApp: App {
     private let e2e = UserDefaults.standard.string(forKey: "e2e")
     #endif
 
+    /// Send several at once, frozen for a screenshot. Made once, here: made inside `body`, the screen's
+    /// reads of it rebuilt it (and restarted its work) every time it changed, in a loop (CI runs
+    /// 44900163317 and 44911678768, where batch-done ended on the home screen).
+    private let batchPreview: BatchSend?
+
     init() {
+        let shot = UserDefaults.standard.string(forKey: "screenshot")
         // The Sending options screenshot shows some options picked (saved, as a person would).
-        if screenshot == "options" {
+        if shot == "options" {
             SendingOptions(usesWholeLimit: true, format: .hevc, pictureSize: .hd).save()
+        }
+        if let shot, shot.hasPrefix("batch-") {
+            batchPreview = BatchSend.preview(shot)
+        } else {
+            batchPreview = nil
         }
     }
 
@@ -74,7 +85,11 @@ struct ShrinkApp: App {
         case "options-free"?:
             NavigationStack { SendingOptionsView(previewPro: false) }
         case let state? where state.hasPrefix("batch-"):
-            BatchSendView(model: .preview(state))
+            if let batchPreview {
+                BatchSendView(model: batchPreview)
+            } else {
+                Text(state)
+            }
         case "freeup-working"?, "freeup-done"?, "freeup-kept"?, "freeup-full"?, "freeup-paused"?:
             FreeUpSpaceRunView(model: .previewRun(screenshot ?? ""))
         case "places"?:

@@ -293,9 +293,9 @@ final class BatchSend {
         let removeLocation = removeLocation
         if item.isVideo {
             guard let target else { throw ShrinkError.couldNotMake("This one makes photos into JPGs, so videos stay out.") }
-            let output = newFile("\(item.name).mp4")
-            let id = item.id
             let options = sending.video(targetBytes: target, removeLocation: removeLocation, timeRange: nil)
+            let output = newFile("\(item.name).\(options.fileExtension)")
+            let id = item.id
             let result = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output, options: options) { [weak self] value in
                 Task { @MainActor in self?.progress(id, value) }
             }

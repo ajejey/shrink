@@ -270,9 +270,7 @@ struct BatchSendView: View {
     }
 }
 
-/// iOS's own share sheet for the finished files. In CI run 44900163317 a ShareLink holding two
-/// finished videos opened them about 250 times in two seconds (making previews) and the app went
-/// down; this sheet makes no previews of its own.
+/// iOS's own share sheet for all the finished files at once.
 private struct ShareSheet: UIViewControllerRepresentable {
     let items: [URL]
 

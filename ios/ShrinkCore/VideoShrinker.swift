@@ -26,6 +26,12 @@ public struct VideoShrinkOptions {
     /// H.264 plays everywhere (Windows, Android, Discord, browsers). HEVC is sharper at the same size
     /// but plays in fewer places, so it's a Pro choice.
     public var codec: AVVideoCodecType { choices.hevc ? .hevc : .h264 }
+
+    /// MP4 plays everywhere but keeps only the date and place (and a title or copyright); the camera,
+    /// lens and the rest need QuickTime (CI run 44911678768 probed it). So keeping every detail makes
+    /// a .mov.
+    public var fileType: AVFileType { keepsAllDetails ? .mov : .mp4 }
+    public var fileExtension: String { keepsAllDetails ? "mov" : "mp4" }
 }
 
 public struct VideoShrinkResult {
@@ -230,14 +236,14 @@ public final class VideoShrinker {
         }
 
         let writer: AVAssetWriter
-        do { writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4) } catch {
+        do { writer = try AVAssetWriter(outputURL: outputURL, fileType: options.fileType) } catch {
             throw ShrinkError.couldNotWrite(error.localizedDescription)
         }
         writer.shouldOptimizeForNetworkUse = true
         if details != .nothing {
             let kept = await Self.keptMetadata(of: asset, removeLocation: options.removeLocation,
                                                keepsAll: details == .all)
-            writer.metadata = Self.forMP4(kept)
+            writer.metadata = options.fileType == .mp4 ? Self.forMP4(kept) : kept
         }
 
         var compression: [String: Any] = [
@@ -419,10 +425,10 @@ public final class VideoShrinker {
         }
     }
 
-    /// MP4 has no room for iPhone-style metadata (com.apple.quicktime.…), so CI run 44900163317 found
-    /// sent videos with no date, place or camera at all, whatever the settings said. Each kept item is
-    /// rewritten in the common key space, which the writer turns into MP4's own kind. Items with no
-    /// common key (a lens model, say) can't go into an MP4 and are left out.
+    /// MP4 has no room for iPhone-style metadata (com.apple.quicktime.…): CI run 44900163317 found sent
+    /// videos with no date or place at all, whatever the settings said. Each kept item is rewritten in
+    /// the common key space, which the writer turns into MP4's own (ISO user data: date, loci). MP4
+    /// drops the camera's make and model however they're written, so those need a .mov.
     static func forMP4(_ items: [AVMetadataItem]) -> [AVMetadataItem] {
         var seen = Set<String>()
         return items.compactMap { item -> AVMetadataItem? in
