@@ -86,6 +86,7 @@ public final class VideoShrinker {
         let originalBytes = (asset as? AVURLAsset).map { Self.fileSize($0.url) }
         var details: Details = options.keepsAllDetails ? .all : .dateAndPlace
         var passes = 0
+        var stalls = 0
         // "Use the whole limit": a pass that fit, kept aside while a fuller one is tried.
         var kept: (bytes: Int64, plan: SizePlan, outputSize: CGSize)?
         let keptURL = outputURL.deletingLastPathComponent()
@@ -106,6 +107,11 @@ public final class VideoShrinker {
             } catch ShrinkError.couldNotWrite(_) where details != .nothing {
                 // Some metadata can't go into MP4. The video matters more than its details, so try with fewer.
                 details = details == .all ? .dateAndPlace : .nothing
+                passes -= 1
+                continue
+            } catch ShrinkError.stalled where stalls == 0 {
+                // AVFoundation stalled (seen once in CI on a 4-second black video). One fresh try.
+                stalls += 1
                 passes -= 1
                 continue
             }
@@ -153,6 +159,9 @@ public final class VideoShrinker {
 
     /// Encodes per video, at most: the first, then corrections (or fuller tries for the whole limit).
     static let maxPasses = 4
+
+    /// Watchdog ticks (5 s each) with no sample moving before an encode counts as stalled.
+    static let stallTicks = 9
 
     /// Which of the source's metadata goes into the file. Lowered when MP4 refuses some of it.
     enum Details: Equatable {
@@ -295,25 +304,41 @@ public final class VideoShrinker {
         writer.startSession(atSourceTime: .zero)
 
         let reporter = ProgressReporter(duration: range.duration.seconds, report: progress)
+        // Whichever comes first ends the wait: every sample drained, or the watchdog giving up (a stuck
+        // writer may never call the drains again, so cancelling the reading alone could still hang).
+        let finish = ResumeOnce()
+        let watchdog = StallWatchdog(idleTicksAllowed: Self.stallTicks) {
+            reader.cancelReading()
+            finish.fire()
+        }
+        watchdog.start()
         await withTaskCancellationHandler {
             await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                finish.set { done.resume() }
                 let group = DispatchGroup()
                 Self.drain(videoOutput, into: videoInput, reader: reader, offset: offset, group: group, label: "shrink.video") {
                     reporter.update($0)
+                    watchdog.touch()
                 }
                 if let audioOutput, let audioInput {
                     Self.drain(audioOutput, into: audioInput, reader: reader, offset: offset, group: group,
-                               label: "shrink.audio", onSample: nil)
+                               label: "shrink.audio") { _ in watchdog.touch() }
                 }
-                group.notify(queue: .global()) { done.resume() }
+                group.notify(queue: .global()) { finish.fire() }
             }
         } onCancel: {
             reader.cancelReading()
         }
+        watchdog.stop()
 
         if Task.isCancelled {
             writer.cancelWriting()
             throw ShrinkError.cancelled
+        }
+        if watchdog.fired {
+            // Its reading was cut short: never finish that into a file that looks whole.
+            writer.cancelWriting()
+            throw ShrinkError.stalled
         }
         if reader.status == .failed {
             writer.cancelWriting()
@@ -468,6 +493,101 @@ public final class VideoShrinker {
 /// Mutable flag touched only on one serial queue.
 final class Flag {
     var value = false
+}
+
+/// Runs its action once, whether `fire` comes before or after the action is set.
+final class ResumeOnce {
+    private let lock = NSLock()
+    private var action: (() -> Void)?
+    private var firedEarly = false
+    private var done = false
+
+    func set(_ action: @escaping () -> Void) {
+        lock.lock()
+        if firedEarly && !done {
+            done = true
+            lock.unlock()
+            action()
+            return
+        }
+        self.action = action
+        lock.unlock()
+    }
+
+    func fire() {
+        lock.lock()
+        guard !done else {
+            lock.unlock()
+            return
+        }
+        guard let action else {
+            firedEarly = true
+            lock.unlock()
+            return
+        }
+        done = true
+        self.action = nil
+        lock.unlock()
+        action()
+    }
+}
+
+/// Stops an encode that has stopped moving: AVFoundation stalled once in CI (a 4-second black video
+/// sat for 7 minutes), and on an iPhone that would be a shrink stuck at one percentage for good. It
+/// counts its own ticks rather than clock time, so time the app spends suspended doesn't count.
+final class StallWatchdog {
+    private let idleTicksAllowed: Int
+    private let onStall: () -> Void
+    private let lock = NSLock()
+    private var moved = false
+    private var idleTicks = 0
+    private var didFire = false
+    private var timer: DispatchSourceTimer?
+
+    init(idleTicksAllowed: Int, onStall: @escaping () -> Void) {
+        self.idleTicksAllowed = idleTicksAllowed
+        self.onStall = onStall
+    }
+
+    var fired: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return didFire
+    }
+
+    func start(every seconds: Double = 5) {
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "shrink.watchdog"))
+        timer.schedule(deadline: .now() + seconds, repeating: seconds)
+        timer.setEventHandler { [weak self] in self?.tick() }
+        self.timer = timer
+        timer.resume()
+    }
+
+    func stop() {
+        timer?.cancel()
+        timer = nil
+    }
+
+    /// A sample moved.
+    func touch() {
+        lock.lock()
+        moved = true
+        lock.unlock()
+    }
+
+    private func tick() {
+        lock.lock()
+        if moved {
+            moved = false
+            idleTicks = 0
+        } else {
+            idleTicks += 1
+        }
+        let stalled = idleTicks >= idleTicksAllowed && !didFire
+        if stalled { didFire = true }
+        lock.unlock()
+        if stalled { onStall() }
+    }
 }
 
 /// Turns sample times into 0...1 progress, reporting at most once per percent.

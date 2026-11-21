@@ -50,6 +50,9 @@ public enum SizePlanner {
     public static let exactFloor = 0.95
     /// Below this the picture turns to mush, so we ask the person to trim instead.
     public static let minimumVideoBitsPerSecond = 120_000
+    /// The least picture bitrate ever asked of the encoder, even for a source that had less (a black
+    /// or still clip can have a few kbps; asking the encoder for that is asking for trouble).
+    static let smallestRequestedVideoBitsPerSecond = 64_000
     /// Bitrate that looks decent at 1920 px and 30 fps in H.264. Other sizes scale with pixel count.
     static let decentBitsAt1920 = 3_000_000.0
     static let standardLongSides = [3840, 2560, 1920, 1280, 960, 854, 640, 480]
@@ -79,7 +82,9 @@ public enum SizePlanner {
         guard budget >= minimumVideoBitsPerSecond else { return nil }
         var video = budget
         // Never spend more than the source had (with room for H.264 being less efficient than HEVC).
-        if let source = sourceVideoBitsPerSecond, source > 0 { video = min(video, source) }
+        if let source = sourceVideoBitsPerSecond, source > 0 {
+            video = max(min(video, source), smallestRequestedVideoBitsPerSecond)
+        }
         // The limit isn't what holds it back: keep the source's own size and frame rate.
         let cappedBySource = video < budget
 

@@ -167,6 +167,40 @@ final class VideoShrinkerTests: XCTestCase {
         try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
     }
 
+    func testAStalledEncodeIsStoppedNotLeftHanging() {
+        let stopped = expectation(description: "the watchdog stops it")
+        let watchdog = StallWatchdog(idleTicksAllowed: 2) { stopped.fulfill() }
+        watchdog.start(every: 0.2)
+        wait(for: [stopped], timeout: 5)
+        watchdog.stop()
+        XCTAssertTrue(watchdog.fired)
+    }
+
+    func testTheWaitEndsOnceWhicheverComesFirst() {
+        var count = 0
+        let early = ResumeOnce()
+        early.fire()
+        early.set { count += 1 }
+        early.fire()
+        let late = ResumeOnce()
+        late.set { count += 1 }
+        late.fire()
+        late.fire()
+        XCTAssertEqual(count, 2, "each runs its action exactly once")
+    }
+
+    func testAMovingEncodeIsLeftAlone() {
+        let watchdog = StallWatchdog(idleTicksAllowed: 2) { XCTFail("it was still moving") }
+        watchdog.start(every: 0.2)
+        let end = Date().addingTimeInterval(1.5)
+        while Date() < end {
+            watchdog.touch()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        watchdog.stop()
+        XCTAssertFalse(watchdog.fired)
+    }
+
     // MARK: - Trim
 
     func testTrimKeepsOnlyThePickedPartAndStartsAtZero() async throws {

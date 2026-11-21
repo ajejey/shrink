@@ -18,12 +18,16 @@ public enum ShrinkError: LocalizedError, Equatable {
     case noSound
     /// A quick extra (sound, muted copy, frame, GIF) couldn't be made.
     case couldNotMake(String)
+    /// The encoder stopped making progress (twice in a row), so the shrink was stopped.
+    case stalled
     case cancelled
 
     public var errorDescription: String? {
         switch self {
         case .noSound:
             return "This video has no sound in it."
+        case .stalled:
+            return "Shrinking got stuck and was stopped. Try again; if it happens again, please report it."
         case .couldNotMake(let why):
             return why
         case .copyCheckFailed(let why):

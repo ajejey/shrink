@@ -50,6 +50,16 @@ final class SizePlannerTests: XCTestCase {
         XCTAssertEqual(plan.maxFrameRate, 30)
     }
 
+    func testNeverAsksTheEncoderForAlmostNothing() throws {
+        // A black clip can have a few kbps; the encoder is still asked for a sane minimum.
+        let plan = try XCTUnwrap(SizePlanner.plan(
+            targetBytes: 25_000_000, durationSeconds: 4, hasAudio: true, sourceLongSide: 640,
+            sourceFrameRate: 30, sourceVideoBitsPerSecond: 3_000, choices: .standard
+        ))
+        XCTAssertEqual(plan.videoBitsPerSecond, SizePlanner.smallestRequestedVideoBitsPerSecond)
+        XCTAssertEqual(plan.maxLongSide, 640)
+    }
+
     func testNeverUpscales() throws {
         let plan = try XCTUnwrap(SizePlanner.plan(
             targetBytes: 100_000_000, durationSeconds: 10, hasAudio: false, sourceLongSide: 640, sourceFrameRate: 30,
