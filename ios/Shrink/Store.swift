@@ -2,8 +2,9 @@ import Security
 import StoreKit
 import SwiftUI
 
-/// Shrink Pro: unlimited Free up space. Pay once ($39.99) or yearly ($19.99), as App Store Connect sets
-/// the prices. No weekly plan, no trial that charges later. Sending is free for everyone, always.
+/// Shrink Pro: unlimited Free up space, Send several at once and the sending options. Pay once ($39.99)
+/// or yearly ($19.99), as App Store Connect sets the prices. No weekly plan, no trial that charges later.
+/// Sending one file at a time is free for everyone, always.
 @Observable
 @MainActor
 final class Store {
@@ -57,7 +58,11 @@ final class Store {
                 pro = true
             }
         }
-        if !previewPrices { isPro = pro }
+        if !previewPrices {
+            isPro = pro
+            // The share sheet and the shared screens read Pro from the App Group.
+            AppSettings.setPro(pro)
+        }
     }
 
     func buy(_ product: Product) async {

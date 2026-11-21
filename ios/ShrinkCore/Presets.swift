@@ -9,6 +9,9 @@ public struct Preset: Codable, Identifiable, Hashable, Sendable {
     public let short: String?
     public let limitBytes: Int64?
     public let limitLabel: String?
+    /// The limit covers everything in one message, not each file (Gmail and Outlook count every
+    /// attachment in the email together). Matters when several files go at once.
+    public let perMessage: Bool?
     public let media: [String]?
     public let confidence: String?
     public let notes: String?
@@ -18,6 +21,7 @@ public struct Preset: Codable, Identifiable, Hashable, Sendable {
 
     public var appliesToVideo: Bool { media?.contains("video") ?? true }
     public var appliesToPhoto: Bool { media?.contains("photo") ?? true }
+    public var limitIsPerMessage: Bool { perMessage ?? false }
 }
 
 public struct PresetCatalog: Codable, Sendable {

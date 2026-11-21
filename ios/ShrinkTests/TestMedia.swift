@@ -12,11 +12,13 @@ enum TestMedia {
 
     /// A video with a moving gradient plus a moving block of noise (hard to compress, like real footage),
     /// and a 440 Hz tone when `audio` is on. `rotated` stores it sideways with a 90° transform, the way
-    /// iPhones store portrait video. `location` adds a filming location to the metadata. `black` paints
-    /// every frame black instead (a copy whose picture was lost, or a video filmed in the dark).
+    /// iPhones store portrait video. `location` adds a filming location to the metadata, `camera` the
+    /// camera's make and model. `black` paints every frame black instead (a copy whose picture was
+    /// lost, or a video filmed in the dark).
     static func makeVideo(
         width: Int, height: Int, seconds: Double, fps: Int32,
-        audio: Bool, rotated: Bool = false, location: Bool = false, bitrate: Int = 20_000_000, black: Bool = false
+        audio: Bool, rotated: Bool = false, location: Bool = false, camera: Bool = false,
+        bitrate: Int = 20_000_000, black: Bool = false
     ) throws -> URL {
         let url = temporaryURL("mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
@@ -32,6 +34,16 @@ enum TestMedia {
             place.value = "+37.3349-122.0090+010.000/" as NSString
             place.dataType = kCMMetadataBaseDataType_UTF8 as String
             metadata.append(place)
+        }
+        if camera {
+            for (identifier, value) in [(AVMetadataIdentifier.quickTimeMetadataMake, "Apple"),
+                                        (AVMetadataIdentifier.quickTimeMetadataModel, "iPhone 17 Pro")] {
+                let item = AVMutableMetadataItem()
+                item.identifier = identifier
+                item.value = value as NSString
+                item.dataType = kCMMetadataBaseDataType_UTF8 as String
+                metadata.append(item)
+            }
         }
         writer.metadata = metadata
 
@@ -145,8 +157,9 @@ enum TestMedia {
     }
 
     /// A photo: gradient with a band of noise, saved as JPEG (or HEIC, like an iPhone's) with GPS and
-    /// an EXIF orientation of 6 (stored sideways, shown upright as portrait).
-    static func makePhoto(width: Int, height: Int, type: UTType = .jpeg) throws -> URL {
+    /// an EXIF orientation of 6 (stored sideways, shown upright as portrait). `extra` adds more
+    /// properties (an IPTC caption, say).
+    static func makePhoto(width: Int, height: Int, type: UTType = .jpeg, extra: [CFString: Any] = [:]) throws -> URL {
         let bytesPerRow = width * 4
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
         pixels.withUnsafeMutableBytes { arc4random_buf($0.baseAddress!, $0.count) }
@@ -174,11 +187,12 @@ enum TestMedia {
             kCGImagePropertyGPSLatitude: 37.3349, kCGImagePropertyGPSLatitudeRef: "N",
             kCGImagePropertyGPSLongitude: 122.0090, kCGImagePropertyGPSLongitudeRef: "W",
         ]
-        let properties: [CFString: Any] = [
+        var properties: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: 0.95,
             kCGImagePropertyOrientation: 6,
             kCGImagePropertyGPSDictionary: gps,
         ]
+        properties.merge(extra) { _, new in new }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
         return url

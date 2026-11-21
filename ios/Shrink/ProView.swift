@@ -1,9 +1,11 @@
 import StoreKit
 import SwiftUI
 
-/// "Free up all the space": Shrink Pro. Shown before a batch that needs it, from Home, and from Settings.
-/// Never after the work is done, never over a finished file.
+/// Shrink Pro. Shown before a batch that needs it, from Home, from Settings, before Send several at once
+/// and from Sending options. Never after the work is done, never over a finished file.
 struct ProView: View {
+    /// What the person tapped, for the headline.
+    var reason: ProReason = .freeUp
     /// A frozen store for CI screenshots; nil uses the real one.
     var preview: Store? = nil
     private var store: Store { preview ?? .shared }
@@ -16,16 +18,18 @@ struct ProView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Free up all the space")
+                        Text(headline)
                             .font(.largeTitle.bold())
-                        Text("Shrink Pro removes the 5 GB limit on Free up space: shrinking videos and cleaning up photos.")
+                        Text(subtitle)
                             .font(.title3)
                             .foregroundStyle(.secondary)
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         benefit("Shrink videos and clean up photos with no limit")
+                        benefit("Send several videos or photos at once")
+                        benefit("Use the whole limit, pick HEVC or the picture size, keep every detail")
                         benefit("Pay once and get every Pro feature added later")
-                        benefit("Sending stays free for everyone, as many as you like")
+                        benefit("Sending one at a time stays free for everyone")
                     }
                     if store.unavailable && !store.previewPrices {
                         Text("Pro can't be bought right now. Check your connection and try again later.")
@@ -102,6 +106,25 @@ struct ProView: View {
         }
     }
 
+    private var headline: String {
+        switch reason {
+        case .freeUp: return "Free up all the space"
+        case .several: return "Send several at once"
+        case .options: return "Sending options"
+        }
+    }
+
+    private var subtitle: String {
+        switch reason {
+        case .freeUp:
+            return "Shrink Pro removes the 5 GB limit on Free up space: shrinking videos and cleaning up photos."
+        case .several:
+            return "Shrink Pro makes a whole pick of videos and photos fit the same place in one go."
+        case .options:
+            return "Shrink Pro lets you choose how files are made: the whole limit, the format, the picture size and every detail."
+        }
+    }
+
     private var selectedProduct: Product? {
         choice == Store.lifetimeID ? store.lifetime : store.yearly
     }
@@ -147,6 +170,11 @@ struct ProView: View {
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
+}
+
+extension ProScreen {
+    /// The app's Pro screen, for the screens it shares with the share sheet (trim, Sending options).
+    static let app = ProScreen { reason in AnyView(ProView(reason: reason)) }
 }
 
 /// Shrink's privacy policy, in the app (also what the App Store links to).

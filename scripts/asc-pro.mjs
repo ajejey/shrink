@@ -18,7 +18,7 @@ import { all, api, find, findApp, maybe, upload } from './asc-api.mjs'
 
 const GROUP = 'Shrink Pro'
 const DESCRIPTION = 'Free up space with no limit'
-const REVIEW_NOTE = 'Shrink Pro removes the 5 GB limit on Free up space. To see it, tap the Settings button at the top of Home, then Get Pro. It also appears before a Free up space batch that would go past the free 5 GB. Sending videos and photos is free for everyone.'
+const REVIEW_NOTE = 'Shrink Pro removes the 5 GB limit on Free up space, and adds Send several at once and Sending options (use the whole size limit, HEVC, picture size, 60 fps, keep all the details). To see it, tap the Settings button at the top of Home, then Get Pro. It also appears before a Free up space batch that would go past the free 5 GB, when tapping Send several at once on Home, and from Sending options on the trim screen. Sending one video or photo at a time is free for everyone.'
 const LIFETIME = { productId: 'com.useshrink.app.pro.lifetime', name: 'Pro Lifetime', display: 'Shrink Pro', price: '39.99' }
 const YEARLY = { productId: 'com.useshrink.app.pro.yearly', name: 'Pro Yearly', display: 'Shrink Pro Yearly', price: '19.99', period: 'ONE_YEAR', level: 1 }
 

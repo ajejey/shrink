@@ -10,16 +10,23 @@ struct ShrinkApp: App {
     private let e2e = UserDefaults.standard.string(forKey: "e2e")
     #endif
 
+    init() {
+        // The Sending options screenshot shows some options picked (saved, as a person would).
+        if screenshot == "options" {
+            SendingOptions(usesWholeLimit: true, format: .hevc, pictureSize: .hd).save()
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             #if DEBUG
             if let e2e {
                 E2EView(mode: e2e)
             } else {
-                screen
+                screen.environment(\.proScreen, .app)
             }
             #else
-            screen
+            screen.environment(\.proScreen, .app)
             #endif
         }
     }
@@ -60,6 +67,14 @@ struct ShrinkApp: App {
             NavigationStack { FreeUpSpaceScreen(model: .preview(pickAll: true)) }
         case "pro"?:
             ProView(preview: .preview())
+        case "pro-several"?:
+            ProView(reason: .several, preview: .preview())
+        case "options"?:
+            NavigationStack { SendingOptionsView(previewPro: true) }
+        case "options-free"?:
+            NavigationStack { SendingOptionsView(previewPro: false) }
+        case let state? where state.hasPrefix("batch-"):
+            BatchSendView(model: .preview(state))
         case "freeup-working"?, "freeup-done"?, "freeup-kept"?, "freeup-full"?, "freeup-paused"?:
             FreeUpSpaceRunView(model: .previewRun(screenshot ?? ""))
         case "places"?:

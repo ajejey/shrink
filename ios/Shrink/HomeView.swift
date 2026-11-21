@@ -20,6 +20,12 @@ struct HomeView: View {
     @State private var quickKind: QuickJob.Kind?
     @State private var showQuickPicker = false
     @State private var quickItem: PhotosPickerItem?
+    @State private var batch = BatchSend()
+    @State private var showSeveralPlaces = false
+    @State private var severalPlace: Destination?
+    @State private var showSeveralPicker = false
+    @State private var severalItems: [PhotosPickerItem] = []
+    @State private var showProSeveral = false
     private let router = ShortcutRouter.shared
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
@@ -36,10 +42,7 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    SendCard(places: recents.isEmpty ? RecentPlaces.popular : recents,
-                             isRecent: !recents.isEmpty,
-                             onPick: pick,
-                             onAllPlaces: { showPlaces = true })
+                    sendCard
                     FreeUpSpaceCard(model: freeUp, cleanup: cleanup,
                                     onOpen: { showFreeUp = true }, onOpenCleanup: { showCleanup = true })
                     QuickJobsCard(onPick: pickQuick)
@@ -133,15 +136,68 @@ struct HomeView: View {
         // A full, solid screen: the first demo's half sheet let the list behind show through.
         .fullScreenCover(isPresented: $job.isShowing, onDismiss: jobClosed) {
             ShrinkJobView(job: job)
+                .environment(\.proScreen, .app)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
     }
 
+    /// "Send a video or photo", with Send several at once's places, Photos picker and screen on it,
+    /// apart from the single job's picker and cover on the stack.
+    private var sendCard: some View {
+        SendCard(places: recents.isEmpty ? RecentPlaces.popular : recents,
+                 isRecent: !recents.isEmpty,
+                 isPro: Store.shared.isPro,
+                 onPick: pick,
+                 onAllPlaces: { showPlaces = true },
+                 onSeveral: openSeveral)
+            .sheet(isPresented: $showSeveralPlaces, onDismiss: {
+                if severalPlace != nil { showSeveralPicker = true }
+            }) {
+                SeveralPlacesView { place in
+                    severalPlace = place
+                    showSeveralPlaces = false
+                }
+            }
+            .sheet(isPresented: $showProSeveral, onDismiss: {
+                // Bought Pro just now: carry on to the places.
+                if Store.shared.isPro { showSeveralPlaces = true }
+            }) {
+                ProView(reason: .several)
+            }
+            .photosPicker(isPresented: $showSeveralPicker, selection: $severalItems,
+                          maxSelectionCount: BatchSend.maxItems, selectionBehavior: .ordered,
+                          matching: severalPlace?.pickerFilter ?? .videos, preferredItemEncoding: .current)
+            .onChange(of: severalItems) { _, items in
+                guard !items.isEmpty, let place = severalPlace else { return }
+                severalItems = []
+                batch.open(items: items, destination: place, removeLocation: AppSettings.removeLocation)
+            }
+            .fullScreenCover(isPresented: $batch.isShowing, onDismiss: batchClosed) {
+                BatchSendView(model: batch)
+            }
+    }
+
     private func pick(_ destination: Destination) {
         chosen = destination
         showPicker = true
+    }
+
+    /// "Send several at once": Pro first if it isn't on, then where they're going, then Photos.
+    private func openSeveral() {
+        severalPlace = nil
+        if Store.shared.isPro {
+            showSeveralPlaces = true
+        } else {
+            showProSeveral = true
+        }
+    }
+
+    /// After Send several at once has closed.
+    private func batchClosed() {
+        recents = RecentPlaces.load()
+        if !batch.madeFiles.isEmpty, ReviewPrompt.recordSuccess() { requestReview() }
     }
 
     private func pickQuick(_ kind: QuickJob.Kind) {
@@ -187,8 +243,10 @@ private struct SendCard: View {
     let places: [Destination]
     /// Recently used places, or the popular ones before anything has been sent.
     let isRecent: Bool
+    let isPro: Bool
     let onPick: (Destination) -> Void
     let onAllPlaces: () -> Void
+    let onSeveral: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -225,6 +283,37 @@ private struct SendCard: View {
             }
             .font(.subheadline)
             .padding(.top, 2)
+            Divider()
+                .padding(.top, 4)
+            Button(action: onSeveral) {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.stack")
+                        .font(.title3)
+                        .foregroundStyle(.tint)
+                        .frame(width: 28)
+                        .accessibilityHidden(true)
+                    Text("Send several at once")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    if !isPro {
+                        Text("Pro")
+                            .font(.caption.weight(.bold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.accentColor.opacity(0.15), in: Capsule())
+                            .foregroundStyle(.tint)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPro ? "Send several at once" : "Send several at once, Shrink Pro")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
@@ -289,6 +378,25 @@ private struct QuickJobsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
+    }
+}
+
+/// "Where are they going?" for Send several at once: the same places, in a sheet with Cancel.
+private struct SeveralPlacesView: View {
+    let onPick: (Destination) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            DestinationList(kind: nil, showsHeader: false, onPick: onPick)
+                .navigationTitle("Where are they going?")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                }
+        }
     }
 }
 

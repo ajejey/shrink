@@ -6,18 +6,26 @@ public struct VideoShrinkOptions {
     public var targetBytes: Int64
     /// Leave the place it was filmed out of the file. On by default.
     public var removeLocation: Bool
-    /// H.264 plays everywhere (Windows, Android, Discord, browsers). HEVC is smaller but less compatible.
-    public var codec: AVVideoCodecType
     /// The part of the video to keep (trim). nil keeps all of it. The finished file starts at 0:00.
     public var timeRange: CMTimeRange?
+    /// Shrink Pro's sending options: the whole limit, picture size, 60 fps, HEVC.
+    public var choices: SizeChoices
+    /// Keep every detail in the file (camera, lens, software...), not just the date. The place still
+    /// follows `removeLocation`.
+    public var keepsAllDetails: Bool
 
-    public init(targetBytes: Int64, removeLocation: Bool = true, codec: AVVideoCodecType = .h264,
-                timeRange: CMTimeRange? = nil) {
+    public init(targetBytes: Int64, removeLocation: Bool = true, timeRange: CMTimeRange? = nil,
+                choices: SizeChoices = .standard, keepsAllDetails: Bool = false) {
         self.targetBytes = targetBytes
         self.removeLocation = removeLocation
-        self.codec = codec
         self.timeRange = timeRange
+        self.choices = choices
+        self.keepsAllDetails = keepsAllDetails
     }
+
+    /// H.264 plays everywhere (Windows, Android, Discord, browsers). HEVC is sharper at the same size
+    /// but plays in fewer places, so it's a Pro choice.
+    public var codec: AVVideoCodecType { choices.hevc ? .hevc : .h264 }
 }
 
 public struct VideoShrinkResult {
@@ -27,7 +35,8 @@ public struct VideoShrinkResult {
     public let originalBytes: Int64?
     public let plan: SizePlan
     public let outputSize: CGSize
-    /// 1 normally; up to 4 when the encoder overshot and we re-encoded lower (and smaller, if needed).
+    /// 1 normally; up to 4 when the encoder overshot and we re-encoded lower (and smaller, if needed),
+    /// or when "Use the whole limit" redid a pass that came out well under the limit.
     public let passes: Int
 }
 
@@ -57,18 +66,25 @@ public final class VideoShrinker {
         let width = abs(upright.width), height = abs(upright.height)
         let longSide = Int(max(width, height).rounded())
 
+        let sourceCap = dataRate > 0 ? Int(Double(dataRate) * 1.5) : nil
         guard var plan = SizePlanner.plan(
             targetBytes: options.targetBytes,
             durationSeconds: duration,
             hasAudio: audioTrack != nil,
             sourceLongSide: longSide,
             sourceFrameRate: Double(nominalFrameRate),
-            sourceVideoBitsPerSecond: dataRate > 0 ? Int(Double(dataRate) * 1.5) : nil
+            sourceVideoBitsPerSecond: sourceCap,
+            choices: options.choices
         ) else { throw ShrinkError.tooLongToFit }
 
         let originalBytes = (asset as? AVURLAsset).map { Self.fileSize($0.url) }
-        var includeMetadata = true
+        var details: Details = options.keepsAllDetails ? .all : .dateAndPlace
         var passes = 0
+        // "Use the whole limit": a pass that fit, kept aside while a fuller one is tried.
+        var kept: (bytes: Int64, plan: SizePlan, outputSize: CGSize)?
+        let keptURL = outputURL.deletingLastPathComponent()
+            .appendingPathComponent("fit-\(UUID().uuidString.prefix(6))-\(outputURL.lastPathComponent)")
+        defer { try? FileManager.default.removeItem(at: keptURL) }
 
         while true {
             passes += 1
@@ -79,30 +95,73 @@ public final class VideoShrinker {
                 try await encode(
                     asset: asset, videoTracks: videoTracks, audioTrack: audioTrack, plan: plan,
                     outputSize: outputSize, range: range, options: options,
-                    includeMetadata: includeMetadata, outputURL: outputURL, progress: progress
+                    details: details, outputURL: outputURL, progress: progress
                 )
-            } catch ShrinkError.couldNotWrite(_) where includeMetadata {
-                // Some metadata can't go into MP4. The video matters more than its date, so try without.
-                includeMetadata = false
+            } catch ShrinkError.couldNotWrite(_) where details != .nothing {
+                // Some metadata can't go into MP4. The video matters more than its details, so try with fewer.
+                details = details == .all ? .dateAndPlace : .nothing
                 passes -= 1
                 continue
             }
 
             let bytes = Self.fileSize(outputURL)
             if bytes > 0, bytes <= options.targetBytes {
-                return VideoShrinkResult(
-                    url: outputURL, bytes: bytes, originalBytes: originalBytes,
-                    plan: plan, outputSize: outputSize, passes: passes
-                )
+                if let earlier = kept, earlier.bytes >= bytes {
+                    // The fuller try came out no bigger: the earlier file is the one.
+                    try Self.move(keptURL, to: outputURL)
+                    return VideoShrinkResult(url: outputURL, bytes: earlier.bytes, originalBytes: originalBytes,
+                                             plan: earlier.plan, outputSize: earlier.outputSize, passes: passes)
+                }
+                let fullEnough = Double(bytes) >= Double(options.targetBytes) * SizePlanner.exactFloor
+                let grew = kept.map { Double(bytes) > Double($0.bytes) * 1.03 } ?? true
+                if options.choices.exactSize, !fullEnough, grew, passes < Self.maxPasses,
+                   let next = SizePlanner.filled(plan, deliveredBytes: bytes, targetBytes: options.targetBytes,
+                                                 durationSeconds: duration, choices: options.choices,
+                                                 maxVideoBitsPerSecond: sourceCap) {
+                    // Well under the limit: keep this file aside and try a fuller one.
+                    try Self.move(outputURL, to: keptURL)
+                    kept = (bytes, plan, outputSize)
+                    plan = next
+                    continue
+                }
+                return VideoShrinkResult(url: outputURL, bytes: bytes, originalBytes: originalBytes,
+                                         plan: plan, outputSize: outputSize, passes: passes)
             }
-            guard passes < 4, let next = SizePlanner.corrected(
-                plan, deliveredBytes: bytes, targetBytes: options.targetBytes, durationSeconds: duration
+            if let earlier = kept {
+                // The fuller try went over the limit; the earlier one fit.
+                try Self.move(keptURL, to: outputURL)
+                return VideoShrinkResult(url: outputURL, bytes: earlier.bytes, originalBytes: originalBytes,
+                                         plan: earlier.plan, outputSize: earlier.outputSize, passes: passes)
+            }
+            guard passes < Self.maxPasses, let next = SizePlanner.corrected(
+                plan, deliveredBytes: bytes, targetBytes: options.targetBytes, durationSeconds: duration,
+                choices: options.choices
             ) else {
                 // Never hand back a file that's over the limit.
                 try? FileManager.default.removeItem(at: outputURL)
                 throw ShrinkError.stillTooBig(bytes: bytes)
             }
             plan = next
+        }
+    }
+
+    /// Encodes per video, at most: the first, then corrections (or fuller tries for the whole limit).
+    static let maxPasses = 4
+
+    /// Which of the source's metadata goes into the file. Lowered when MP4 refuses some of it.
+    enum Details: Equatable {
+        /// Everything (camera, lens, software, date...); the place only when it's kept.
+        case all
+        /// The date it was filmed, and the place only when it's kept.
+        case dateAndPlace
+        case nothing
+    }
+
+    /// Replaces `destination` with the file at `source`.
+    static func move(_ source: URL, to destination: URL) throws {
+        try? FileManager.default.removeItem(at: destination)
+        do { try FileManager.default.moveItem(at: source, to: destination) } catch {
+            throw ShrinkError.couldNotWrite(error.localizedDescription)
         }
     }
 
@@ -116,7 +175,7 @@ public final class VideoShrinker {
         outputSize: CGSize,
         range: CMTimeRange,
         options: VideoShrinkOptions,
-        includeMetadata: Bool,
+        details: Details,
         outputURL: URL,
         progress: @escaping (Double) -> Void
     ) async throws {
@@ -175,8 +234,9 @@ public final class VideoShrinker {
             throw ShrinkError.couldNotWrite(error.localizedDescription)
         }
         writer.shouldOptimizeForNetworkUse = true
-        if includeMetadata {
-            writer.metadata = await Self.keptMetadata(of: asset, removeLocation: options.removeLocation)
+        if details != .nothing {
+            writer.metadata = await Self.keptMetadata(of: asset, removeLocation: options.removeLocation,
+                                                      keepsAll: details == .all)
         }
 
         var compression: [String: Any] = [
@@ -347,14 +407,23 @@ public final class VideoShrinker {
         return CGSize(width: even(width), height: even(height))
     }
 
-    /// The date it was filmed, and its location only when the person chose to keep it.
-    static func keptMetadata(of asset: AVAsset, removeLocation: Bool) async -> [AVMetadataItem] {
+    /// The date it was filmed (or every detail, with `keepsAll`), and its location only when the
+    /// person chose to keep it.
+    static func keptMetadata(of asset: AVAsset, removeLocation: Bool, keepsAll: Bool) async -> [AVMetadataItem] {
         let items = (try? await asset.load(.metadata)) ?? []
         return items.filter { item in
-            let id = item.identifier?.rawValue.lowercased() ?? ""
-            if id.contains("location") { return !removeLocation }
-            return id.contains("creationdate")
+            if isLocation(item) { return !removeLocation }
+            if keepsAll { return true }
+            return item.identifier?.rawValue.lowercased().contains("creationdate") == true
         }
+    }
+
+    /// A place in any of the forms a video can carry it: QuickTime's location keys, the user data
+    /// xyz atom, 3GPP's loci, or anything tagged as the common location.
+    static func isLocation(_ item: AVMetadataItem) -> Bool {
+        if item.commonKey == .commonKeyLocation { return true }
+        let id = item.identifier?.rawValue.lowercased() ?? ""
+        return id.contains("location") || id.contains("xyz") || id.contains("loci") || id.contains("gps")
     }
 
     static func stereoLayout() -> Data {

@@ -10,6 +10,16 @@ enum AppSettings {
     static var removeLocation: Bool {
         defaults.object(forKey: removeLocationKey) as? Bool ?? true
     }
+
+    static let proKey = "proUnlocked"
+
+    /// Shrink Pro as the app last saw it in the App Store's records. The app writes it (Store.swift);
+    /// the share sheet reads it from here, since it has no store of its own.
+    static var isPro: Bool { defaults.bool(forKey: proKey) }
+
+    static func setPro(_ on: Bool) {
+        if defaults.bool(forKey: proKey) != on { defaults.set(on, forKey: proKey) }
+    }
 }
 
 /// The places someone sent to most recently, shown as one-tap buttons on Home.

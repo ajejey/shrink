@@ -14,6 +14,8 @@ struct Destination: Identifiable, Hashable {
     let limitLabel: String?
     let takesVideos: Bool
     let takesPhotos: Bool
+    /// Several files sent at once must fit under the limit together (one email), not each on its own.
+    let limitIsTotal: Bool
 
     init(preset: Preset) {
         id = preset.id
@@ -23,10 +25,11 @@ struct Destination: Identifiable, Hashable {
         limitLabel = preset.limitLabel
         takesVideos = preset.appliesToVideo
         takesPhotos = preset.appliesToPhoto
+        limitIsTotal = preset.limitIsPerMessage
     }
 
     init(id: String, title: String, shortTitle: String, limitBytes: Int64?, limitLabel: String?,
-         takesVideos: Bool, takesPhotos: Bool) {
+         takesVideos: Bool, takesPhotos: Bool, limitIsTotal: Bool) {
         self.id = id
         self.title = title
         self.shortTitle = shortTitle
@@ -34,6 +37,7 @@ struct Destination: Identifiable, Hashable {
         self.limitLabel = limitLabel
         self.takesVideos = takesVideos
         self.takesPhotos = takesPhotos
+        self.limitIsTotal = limitIsTotal
     }
 
     /// Every preset with a limit, in the file's order.
@@ -41,12 +45,13 @@ struct Destination: Identifiable, Hashable {
 
     /// HEIC photos from an iPhone, made into JPGs that open on Windows, Android and every website.
     static let jpg = Destination(id: "jpg", title: "Convert a photo to JPG", shortTitle: "JPG", limitBytes: nil,
-                                 limitLabel: nil, takesVideos: false, takesPhotos: true)
+                                 limitLabel: nil, takesVideos: false, takesPhotos: true, limitIsTotal: false)
 
     /// A limit the person typed, for a form or site that states its own ("Max file size: 2 MB").
     static func typed(_ limit: TypedLimit) -> Destination {
         Destination(id: "typed-\(limit.bytes)", title: "Under \(limit.label)", shortTitle: "Under \(limit.label)",
-                    limitBytes: limit.bytes, limitLabel: limit.label, takesVideos: true, takesPhotos: true)
+                    limitBytes: limit.bytes, limitLabel: limit.label, takesVideos: true, takesPhotos: true,
+                    limitIsTotal: false)
     }
 
     /// A preset or "Convert a photo to JPG" by its id; nil for typed limits and anything since removed.

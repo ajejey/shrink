@@ -55,6 +55,29 @@ final class PhotoShrinkerTests: XCTestCase {
         XCTAssertGreaterThan(result.pixelHeight, result.pixelWidth, "upright portrait")
     }
 
+    func testKeepAllTheDetailsKeepsTheCaptionButNotTheCity() throws {
+        let iptc: [CFString: Any] = [kCGImagePropertyIPTCCaptionAbstract: "Team photo", kCGImagePropertyIPTCCity: "Paris"]
+        let source = try TestMedia.makePhoto(width: 800, height: 600, extra: [kCGImagePropertyIPTCDictionary: iptc])
+        XCTAssertEqual(iptcOf(source)?[kCGImagePropertyIPTCCaptionAbstract] as? String, "Team photo",
+                       "the test photo should start with a caption")
+
+        let usual = TestMedia.temporaryURL("jpg")
+        _ = try PhotoShrinker.shrink(imageAt: source, to: usual, targetBytes: nil)
+        XCTAssertNil(iptcOf(usual)?[kCGImagePropertyIPTCCaptionAbstract], "the usual settings leave the caption out")
+
+        let all = TestMedia.temporaryURL("jpg")
+        _ = try PhotoShrinker.shrink(imageAt: source, to: all, targetBytes: nil, keepsAllDetails: true)
+        let kept = try XCTUnwrap(iptcOf(all))
+        XCTAssertEqual(kept[kCGImagePropertyIPTCCaptionAbstract] as? String, "Team photo")
+        XCTAssertNil(kept[kCGImagePropertyIPTCCity], "the city goes with the place while location is removed")
+    }
+
+    private func iptcOf(_ url: URL) -> [CFString: Any]? {
+        guard let image = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any] else { return nil }
+        return properties[kCGImagePropertyIPTCDictionary] as? [CFString: Any]
+    }
+
     func testNoLimitStillMakesAJPEG() throws {
         // "Convert a photo to JPG": no limit, good quality, plays everywhere.
         let source = try TestMedia.makePhoto(width: 1200, height: 900)

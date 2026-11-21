@@ -22,7 +22,8 @@ public enum PhotoShrinker {
         imageAt source: URL,
         to output: URL,
         targetBytes: Int64?,
-        removeLocation: Bool = true
+        removeLocation: Bool = true,
+        keepsAllDetails: Bool = false
     ) throws -> PhotoShrinkResult {
         guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
@@ -30,7 +31,7 @@ public enum PhotoShrinker {
               let height = properties[kCGImagePropertyPixelHeight] as? Int
         else { throw ShrinkError.couldNotRead("This doesn't look like a photo.") }
 
-        let metadata = keptProperties(properties, removeLocation: removeLocation)
+        let metadata = keptProperties(properties, removeLocation: removeLocation, keepsAll: keepsAllDetails)
         var longSide = max(width, height)
 
         while true {
@@ -113,8 +114,10 @@ public enum PhotoShrinker {
         return .fits(best.data, quality: best.quality)
     }
 
-    /// Camera details and the date taken; GPS only when the person chose to keep location.
-    static func keptProperties(_ properties: [CFString: Any], removeLocation: Bool) -> [CFString: Any] {
+    /// Camera details and the date taken; with `keepsAll` (Pro) also the IPTC captions, keywords and
+    /// credits and the lens's extra details. GPS (and IPTC's city and country) only when the person
+    /// chose to keep location.
+    static func keptProperties(_ properties: [CFString: Any], removeLocation: Bool, keepsAll: Bool) -> [CFString: Any] {
         var kept: [CFString: Any] = [kCGImagePropertyOrientation: 1]
         if var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] {
             exif[kCGImagePropertyExifPixelXDimension] = nil
@@ -127,6 +130,21 @@ public enum PhotoShrinker {
         }
         if !removeLocation, let gps = properties[kCGImagePropertyGPSDictionary] {
             kept[kCGImagePropertyGPSDictionary] = gps
+        }
+        if keepsAll {
+            if let aux = properties[kCGImagePropertyExifAuxDictionary] {
+                kept[kCGImagePropertyExifAuxDictionary] = aux
+            }
+            if var iptc = properties[kCGImagePropertyIPTCDictionary] as? [CFString: Any] {
+                if removeLocation {
+                    for key in [kCGImagePropertyIPTCCity, kCGImagePropertyIPTCSubLocation,
+                                kCGImagePropertyIPTCProvinceState, kCGImagePropertyIPTCCountryPrimaryLocationName,
+                                kCGImagePropertyIPTCCountryPrimaryLocationCode] {
+                        iptc[key] = nil
+                    }
+                }
+                kept[kCGImagePropertyIPTCDictionary] = iptc
+            }
         }
         return kept
     }

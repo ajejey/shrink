@@ -75,6 +75,97 @@ final class VideoShrinkerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
     }
 
+    func testLocationIsKeptWhenThePersonChoosesTo() async throws {
+        let source = try TestMedia.makeVideo(width: 640, height: 360, seconds: 2, fps: 30, audio: false, location: true)
+        let output = TestMedia.temporaryURL("mp4")
+
+        _ = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output,
+                                             options: .init(targetBytes: 1_000_000, removeLocation: false))
+
+        let items = try await AVURLAsset(url: output).load(.metadata)
+        XCTAssertTrue(items.contains(where: isLocation))
+        XCTAssertTrue(items.contains(where: isCreationDate), "the date it was filmed is kept")
+    }
+
+    // MARK: - Pro options
+
+    func testHEVCMakesAnHEVCFileUnderTheLimit() async throws {
+        let source = try TestMedia.makeVideo(width: 1920, height: 1080, seconds: 4, fps: 30, audio: true)
+        let output = TestMedia.temporaryURL("mp4")
+        let limit: Int64 = 1_500_000
+
+        let result = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output,
+                                                      options: .init(targetBytes: limit, choices: SizeChoices(hevc: true)))
+
+        XCTAssertLessThanOrEqual(result.bytes, limit)
+        let tracks = try await AVURLAsset(url: output).loadTracks(withMediaType: .video)
+        let track = try XCTUnwrap(tracks.first)
+        let formats = try await track.load(.formatDescriptions)
+        let format = try XCTUnwrap(formats.first)
+        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(format), kCMVideoCodecType_HEVC)
+        try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
+    }
+
+    func testWholeLimitLandsNearTheLimitButNeverOver() async throws {
+        let source = try TestMedia.makeVideo(width: 1920, height: 1080, seconds: 6, fps: 30, audio: true)
+        let output = TestMedia.temporaryURL("mp4")
+        let limit: Int64 = 3_000_000
+
+        let result = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output,
+                                                      options: .init(targetBytes: limit, choices: SizeChoices(exactSize: true)))
+
+        print("WHOLE-LIMIT \(result.bytes) of \(limit) in \(result.passes) passes")
+        XCTAssertLessThanOrEqual(result.bytes, limit)
+        XCTAssertLessThanOrEqual(fileSize(output), limit)
+        XCTAssertEqual(fileSize(output), result.bytes, "the file handed back is the one measured")
+        XCTAssertGreaterThan(Double(result.bytes), Double(limit) * 0.88, "lands near the limit")
+        try await assertGood(output, duration: 6, hasAudio: true, portrait: false)
+    }
+
+    func testChosenPictureSizeIsUsed() async throws {
+        let source = try TestMedia.makeVideo(width: 1920, height: 1080, seconds: 3, fps: 30, audio: false)
+        let output = TestMedia.temporaryURL("mp4")
+
+        let result = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output,
+                                                      options: .init(targetBytes: 5_000_000, choices: SizeChoices(longSide: 854)))
+
+        XCTAssertEqual(Int(max(result.outputSize.width, result.outputSize.height)), 854)
+        try await assertGood(output, duration: 3, hasAudio: false, portrait: false)
+    }
+
+    func testAllTheDetailsOnlyWhenAskedAndNeverThePlace() async throws {
+        let source = try TestMedia.makeVideo(width: 640, height: 360, seconds: 2, fps: 30, audio: false,
+                                             location: true, camera: true)
+        let usual = TestMedia.temporaryURL("mp4")
+        _ = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: usual,
+                                             options: .init(targetBytes: 1_000_000))
+        let usualItems = try await AVURLAsset(url: usual).load(.metadata)
+        XCTAssertFalse(usualItems.contains(where: isCameraModel), "the usual settings leave the camera out")
+
+        let all = TestMedia.temporaryURL("mp4")
+        _ = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: all,
+                                             options: .init(targetBytes: 1_000_000, keepsAllDetails: true))
+        let allItems = try await AVURLAsset(url: all).load(.metadata)
+        XCTAssertTrue(allItems.contains(where: isCameraModel), "all the details keep the camera")
+        XCTAssertTrue(allItems.contains(where: isCreationDate), "and the date")
+        XCTAssertFalse(allItems.contains(where: isLocation), "the place still follows Remove location")
+    }
+
+    /// The CI sample video has about 50 kbps of picture. It used to be turned away as too long for
+    /// any limit; now it's made at its own rate.
+    func testVeryLowBitrateVideoIsNotTurnedAway() async throws {
+        let source = try TestMedia.makeVideo(width: 640, height: 360, seconds: 4, fps: 30, audio: true,
+                                             bitrate: 60_000, black: true)
+        let output = TestMedia.temporaryURL("mp4")
+
+        let result = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output,
+                                                      options: .init(targetBytes: 25_000_000))
+
+        XCTAssertLessThanOrEqual(result.bytes, 25_000_000)
+        XCTAssertEqual(Int(max(result.outputSize.width, result.outputSize.height)), 640, "keeps its own size")
+        try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
+    }
+
     // MARK: - Trim
 
     func testTrimKeepsOnlyThePickedPartAndStartsAtZero() async throws {
@@ -152,6 +243,14 @@ final class VideoShrinkerTests: XCTestCase {
 
     private func isLocation(_ item: AVMetadataItem) -> Bool {
         item.identifier?.rawValue.lowercased().contains("location") == true
+    }
+
+    private func isCreationDate(_ item: AVMetadataItem) -> Bool {
+        item.identifier?.rawValue.lowercased().contains("creationdate") == true
+    }
+
+    private func isCameraModel(_ item: AVMetadataItem) -> Bool {
+        item.identifier?.rawValue.lowercased().contains("model") == true
     }
 
     private func fileSize(_ url: URL) -> Int64 {

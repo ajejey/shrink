@@ -115,8 +115,8 @@ final class ShrinkJob {
         )
         // The whole video (within a frame) needs no trim; nil keeps every last sample.
         let wholeVideo = part.lowerBound <= 0.01 && part.upperBound >= picked.duration - 0.01
-        let options = VideoShrinkOptions(targetBytes: targetBytes, removeLocation: removeLocation,
-                                         timeRange: wholeVideo ? nil : range)
+        let options = SendingOptions.current.video(targetBytes: targetBytes, removeLocation: removeLocation,
+                                                   timeRange: wholeVideo ? nil : range)
         task = Task {
             do {
                 let output = FileManager.default.temporaryDirectory
@@ -186,10 +186,10 @@ final class ShrinkJob {
         let originalBytes = Self.fileSize(url)
         let output = FileManager.default.temporaryDirectory
             .appendingPathComponent("Shrink-\(UUID().uuidString.prefix(6)).jpg")
-        let targetBytes = targetBytes, removeLocation = removeLocation
+        let targetBytes = targetBytes, removeLocation = removeLocation, sending = SendingOptions.current
         // PhotoShrinker works synchronously; keep it off the main thread.
         let result = try await Task.detached(priority: .userInitiated) {
-            try PhotoShrinker.shrink(imageAt: url, to: output, targetBytes: targetBytes, removeLocation: removeLocation)
+            try sending.photo(at: url, to: output, targetBytes: targetBytes, removeLocation: removeLocation)
         }.value
         try Task.checkCancellation()
         phase = .done(Finished(url: result.url, bytes: result.bytes, originalBytes: originalBytes > 0 ? originalBytes : nil))
@@ -265,6 +265,8 @@ struct PickedVideo {
     let longSide: Int
     /// Width over height of the upright picture.
     let aspectRatio: Double
+    /// Frames per second as filmed (30 when the file doesn't say).
+    let frameRate: Double
     /// A copy we made (from the Photos picker), deleted when the job closes.
     let isOurCopy: Bool
 
@@ -275,13 +277,14 @@ struct PickedVideo {
         let hasAudio = !audioTracks.isEmpty
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { throw ShrinkError.couldNotRead("It has no length.") }
-        let (size, transform) = try await track.load(.naturalSize, .preferredTransform)
+        let (size, transform, rate) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
         let upright = size.applying(transform)
         let width = abs(upright.width), height = abs(upright.height)
         return PickedVideo(
             url: url, duration: duration, hasAudio: hasAudio,
             longSide: Int(max(width, height).rounded()),
             aspectRatio: height > 0 ? Double(width / height) : 16.0 / 9.0,
+            frameRate: rate > 0 ? Double(rate) : 30,
             isOurCopy: isOurCopy(url)
         )
     }

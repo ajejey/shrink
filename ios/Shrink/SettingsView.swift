@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings: Pro, the location switch, help and privacy.
+/// Settings: Pro, the location switch, Sending options, help and privacy.
 struct SettingsView: View {
     private var store: Store { .shared }
     @Environment(\.dismiss) private var dismiss
@@ -13,14 +13,14 @@ struct SettingsView: View {
             List {
                 Section("Shrink Pro") {
                     if store.isPro {
-                        Label("Pro is on: Free up space has no limit", systemImage: "checkmark.seal.fill")
+                        Label("Pro is on: everything is unlocked", systemImage: "checkmark.seal.fill")
                     } else {
                         Button {
                             showPro = true
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Get Pro").font(.headline)
-                                Text("Free up space with no limit")
+                                Text("Free up space with no limit, send several at once, choose how files are made")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
@@ -34,6 +34,16 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Remove location before sharing", isOn: $removeLocation)
+                    NavigationLink {
+                        SendingOptionsView(showsDone: false)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sending options")
+                            Text(store.isPro ? SendingOptions.saved.summary : "Whole limit, HEVC, picture size, all details (Pro)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Sending")
                 } footer: {
@@ -77,6 +87,7 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $showPro) { ProView() }
+            .environment(\.proScreen, .app)
             .alert("Shrink Pro", isPresented: Binding(get: { store.message != nil && !showPro },
                                                       set: { if !$0 { store.message = nil } })) {
                 Button("OK", role: .cancel) {}

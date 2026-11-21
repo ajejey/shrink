@@ -15,26 +15,34 @@ struct TrimView: View {
     @State private var end: Double
     @State private var player: AVPlayer
     @State private var frames: [UIImage] = []
+    /// Pro's sending options as the shrink will use them (re-read when Sending options closes).
+    @State private var choices: SizeChoices
+    @State private var showOptions = false
+    @Environment(\.proScreen) private var proScreen
+    @AppStorage(AppSettings.proKey, store: AppSettings.defaults) private var proUnlocked = false
     /// The whole video was too long to fit, so only its start is picked to begin with.
     private let startsShortened: Bool
-
-    /// Longest the part can be and still fit at all, and still look sharp.
-    private let longestThatFits: Double
-    private let longestThatLooksSharp: Double
 
     init(video: PickedVideo, targetBytes: Int64, limitLabel: String?, onShrink: @escaping (ClosedRange<Double>) -> Void) {
         self.video = video
         self.targetBytes = targetBytes
         self.limitLabel = limitLabel
         self.onShrink = onShrink
-        let fits = SizePlanner.longestSeconds(targetBytes: targetBytes, hasAudio: video.hasAudio,
-                                              sourceLongSide: video.longSide, sharp: false)
-        longestThatFits = fits
-        longestThatLooksSharp = SizePlanner.longestSeconds(targetBytes: targetBytes, hasAudio: video.hasAudio,
-                                                           sourceLongSide: video.longSide, sharp: true)
+        let choices = SendingOptions.current.sizeChoices
+        _choices = State(initialValue: choices)
+        let fits = Self.longest(video, targetBytes: targetBytes, choices: choices, sharp: false)
         startsShortened = video.duration > fits
         _end = State(initialValue: startsShortened ? (fits * 0.98).rounded(.down) : video.duration)
         _player = State(initialValue: AVPlayer(url: video.url))
+    }
+
+    /// Longest the part can be and still fit at all, and still look sharp.
+    private var longestThatFits: Double { Self.longest(video, targetBytes: targetBytes, choices: choices, sharp: false) }
+    private var longestThatLooksSharp: Double { Self.longest(video, targetBytes: targetBytes, choices: choices, sharp: true) }
+
+    static func longest(_ video: PickedVideo, targetBytes: Int64, choices: SizeChoices, sharp: Bool) -> Double {
+        SizePlanner.longestSeconds(targetBytes: targetBytes, hasAudio: video.hasAudio, sourceLongSide: video.longSide,
+                                   sourceFrameRate: video.frameRate, sharp: sharp, choices: choices)
     }
 
     private var length: Double { end - start }
@@ -72,6 +80,14 @@ struct TrimView: View {
 
             Spacer(minLength: 0)
 
+            // Pro's options. The share sheet can't sell Pro, so there it shows only for Pro.
+            if proUnlocked || proScreen != nil {
+                SendingOptionsRow(isPro: proUnlocked) {
+                    player.pause()
+                    showOptions = true
+                }
+            }
+
             Button {
                 player.pause()
                 onShrink(start...end)
@@ -85,6 +101,10 @@ struct TrimView: View {
             .disabled(!fits || length < VideoShrinker.shortestTrimSeconds)
         }
         .padding(20)
+        .sheet(isPresented: $showOptions, onDismiss: { choices = SendingOptions.current.sizeChoices }) {
+            NavigationStack { SendingOptionsView() }
+                .environment(\.proScreen, proScreen)
+        }
         .task { frames = await Self.filmstrip(of: video, count: 8) }
         .onAppear { player.currentItem?.forwardPlaybackEndTime = time(end) }
         .onDisappear { player.pause() }
