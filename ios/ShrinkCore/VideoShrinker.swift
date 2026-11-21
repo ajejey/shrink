@@ -368,11 +368,32 @@ public final class VideoShrinker {
         if writer.status == .failed {
             throw ShrinkError.couldNotWrite(writer.error?.localizedDescription ?? "")
         }
-        await writer.finishWriting()
+        guard await Self.finishWriting(writer, within: Self.finishSeconds) else {
+            // Closing the file got stuck: the same as a stalled encode (one fresh try, then an error).
+            throw ShrinkError.stalled
+        }
         guard writer.status == .completed else {
             throw ShrinkError.couldNotWrite(writer.error?.localizedDescription ?? "")
         }
         progress(1)
+    }
+
+    /// The most closing a file may take. It takes well under a second normally.
+    static let finishSeconds = 60.0
+
+    /// `finishWriting`, but never forever: false (and the writing cancelled) after `seconds`.
+    static func finishWriting(_ writer: AVAssetWriter, within seconds: Double) async -> Bool {
+        await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in
+            let gate = OnceGate()
+            writer.finishWriting {
+                if gate.pass() { done.resume(returning: true) }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+                guard gate.pass() else { return }
+                writer.cancelWriting()
+                done.resume(returning: false)
+            }
+        }
     }
 
     /// Moves samples from a reader output to a writer input until the output runs dry, moving each
@@ -514,6 +535,20 @@ public final class VideoShrinker {
 /// Mutable flag touched only on one serial queue.
 final class Flag {
     var value = false
+}
+
+/// Lets exactly one caller through.
+final class OnceGate {
+    private let lock = NSLock()
+    private var passed = false
+
+    func pass() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if passed { return false }
+        passed = true
+        return true
+    }
 }
 
 /// Runs its action once, whether `fire` comes before or after the action is set.
