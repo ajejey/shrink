@@ -73,88 +73,109 @@ public final class VideoShrinker {
         let longSide = Int(max(width, height).rounded())
 
         let sourceCap = dataRate > 0 ? Int(Double(dataRate) * 1.5) : nil
-        guard var plan = SizePlanner.plan(
-            targetBytes: options.targetBytes,
-            durationSeconds: duration,
-            hasAudio: audioTrack != nil,
-            sourceLongSide: longSide,
-            sourceFrameRate: Double(nominalFrameRate),
-            sourceVideoBitsPerSecond: sourceCap,
-            choices: options.choices
-        ) else { throw ShrinkError.tooLongToFit }
-
         let originalBytes = (asset as? AVURLAsset).map { Self.fileSize($0.url) }
-        var details: Details = options.keepsAllDetails ? .all : .dateAndPlace
-        var passes = 0
-        var stalls = 0
-        // "Use the whole limit": a pass that fit, kept aside while a fuller one is tried.
-        var kept: (bytes: Int64, plan: SizePlan, outputSize: CGSize)?
-        let keptURL = outputURL.deletingLastPathComponent()
-            .appendingPathComponent("fit-\(UUID().uuidString.prefix(6))-\(outputURL.lastPathComponent)")
-        defer { try? FileManager.default.removeItem(at: keptURL) }
 
-        while true {
-            passes += 1
-            let outputSize = Self.outputSize(width: width, height: height, maxLongSide: plan.maxLongSide)
-            if Task.isCancelled { throw ShrinkError.cancelled }
-            try? FileManager.default.removeItem(at: outputURL)
-            do {
-                try await encode(
-                    asset: asset, videoTracks: videoTracks, audioTrack: audioTrack, plan: plan,
-                    outputSize: outputSize, range: range, options: options,
-                    details: details, outputURL: outputURL, progress: progress
-                )
-            } catch ShrinkError.couldNotWrite(_) where details != .nothing {
-                // Some metadata can't go into MP4. The video matters more than its details, so try with fewer.
-                details = details == .all ? .dateAndPlace : .nothing
-                passes -= 1
-                continue
-            } catch ShrinkError.stalled where stalls == 0 {
-                // AVFoundation stalled (seen once in CI on a 4-second black video). One fresh try.
-                stalls += 1
-                passes -= 1
-                continue
-            }
+        /// Plans and encodes under `target`, correcting until the file fits (or can't).
+        func attempt(under target: Int64) async throws -> VideoShrinkResult {
+            guard var plan = SizePlanner.plan(
+                targetBytes: target,
+                durationSeconds: duration,
+                hasAudio: audioTrack != nil,
+                sourceLongSide: longSide,
+                sourceFrameRate: Double(nominalFrameRate),
+                sourceVideoBitsPerSecond: sourceCap,
+                choices: options.choices
+            ) else { throw ShrinkError.tooLongToFit }
 
-            let bytes = Self.fileSize(outputURL)
-            if bytes > 0, bytes <= options.targetBytes {
-                if let earlier = kept, earlier.bytes >= bytes {
-                    // The fuller try came out no bigger: the earlier file is the one.
+            var details: Details = options.keepsAllDetails ? .all : .dateAndPlace
+            var passes = 0
+            var stalls = 0
+            // "Use the whole limit": a pass that fit, kept aside while a fuller one is tried.
+            var kept: (bytes: Int64, plan: SizePlan, outputSize: CGSize)?
+            let keptURL = outputURL.deletingLastPathComponent()
+                .appendingPathComponent("fit-\(UUID().uuidString.prefix(6))-\(outputURL.lastPathComponent)")
+            defer { try? FileManager.default.removeItem(at: keptURL) }
+
+            while true {
+                passes += 1
+                let outputSize = Self.outputSize(width: width, height: height, maxLongSide: plan.maxLongSide)
+                if Task.isCancelled { throw ShrinkError.cancelled }
+                try? FileManager.default.removeItem(at: outputURL)
+                do {
+                    try await encode(
+                        asset: asset, videoTracks: videoTracks, audioTrack: audioTrack, plan: plan,
+                        outputSize: outputSize, range: range, options: options,
+                        details: details, outputURL: outputURL, progress: progress
+                    )
+                } catch ShrinkError.couldNotWrite(_) where details != .nothing {
+                    // Some metadata can't go into MP4. The video matters more than its details, so try with fewer.
+                    details = details == .all ? .dateAndPlace : .nothing
+                    passes -= 1
+                    continue
+                } catch ShrinkError.stalled where stalls == 0 {
+                    // AVFoundation stalled (seen once in CI on a 4-second black video). One fresh try.
+                    stalls += 1
+                    passes -= 1
+                    continue
+                }
+
+                let bytes = Self.fileSize(outputURL)
+                if bytes > 0, bytes <= target {
+                    if let earlier = kept, earlier.bytes >= bytes {
+                        // The fuller try came out no bigger: the earlier file is the one.
+                        try Self.move(keptURL, to: outputURL)
+                        return VideoShrinkResult(url: outputURL, bytes: earlier.bytes, originalBytes: originalBytes,
+                                                 plan: earlier.plan, outputSize: earlier.outputSize, passes: passes)
+                    }
+                    let fullEnough = Double(bytes) >= Double(target) * SizePlanner.exactFloor
+                    let grew = kept.map { Double(bytes) > Double($0.bytes) * 1.03 } ?? true
+                    if options.choices.exactSize, !fullEnough, grew, passes < Self.maxPasses,
+                       let next = SizePlanner.filled(plan, deliveredBytes: bytes, targetBytes: target,
+                                                     durationSeconds: duration, choices: options.choices,
+                                                     maxVideoBitsPerSecond: sourceCap) {
+                        // Well under the limit: keep this file aside and try a fuller one.
+                        try Self.move(outputURL, to: keptURL)
+                        kept = (bytes, plan, outputSize)
+                        plan = next
+                        continue
+                    }
+                    return VideoShrinkResult(url: outputURL, bytes: bytes, originalBytes: originalBytes,
+                                             plan: plan, outputSize: outputSize, passes: passes)
+                }
+                if let earlier = kept {
+                    // The fuller try went over the limit; the earlier one fit.
                     try Self.move(keptURL, to: outputURL)
                     return VideoShrinkResult(url: outputURL, bytes: earlier.bytes, originalBytes: originalBytes,
                                              plan: earlier.plan, outputSize: earlier.outputSize, passes: passes)
                 }
-                let fullEnough = Double(bytes) >= Double(options.targetBytes) * SizePlanner.exactFloor
-                let grew = kept.map { Double(bytes) > Double($0.bytes) * 1.03 } ?? true
-                if options.choices.exactSize, !fullEnough, grew, passes < Self.maxPasses,
-                   let next = SizePlanner.filled(plan, deliveredBytes: bytes, targetBytes: options.targetBytes,
-                                                 durationSeconds: duration, choices: options.choices,
-                                                 maxVideoBitsPerSecond: sourceCap) {
-                    // Well under the limit: keep this file aside and try a fuller one.
-                    try Self.move(outputURL, to: keptURL)
-                    kept = (bytes, plan, outputSize)
-                    plan = next
-                    continue
+                guard passes < Self.maxPasses, let next = SizePlanner.corrected(
+                    plan, deliveredBytes: bytes, targetBytes: target, durationSeconds: duration,
+                    choices: options.choices
+                ) else {
+                    // Never hand back a file that's over the limit.
+                    try? FileManager.default.removeItem(at: outputURL)
+                    throw ShrinkError.stillTooBig(bytes: bytes)
                 }
-                return VideoShrinkResult(url: outputURL, bytes: bytes, originalBytes: originalBytes,
-                                         plan: plan, outputSize: outputSize, passes: passes)
+                plan = next
             }
-            if let earlier = kept {
-                // The fuller try went over the limit; the earlier one fit.
-                try Self.move(keptURL, to: outputURL)
-                return VideoShrinkResult(url: outputURL, bytes: earlier.bytes, originalBytes: originalBytes,
-                                         plan: earlier.plan, outputSize: earlier.outputSize, passes: passes)
-            }
-            guard passes < Self.maxPasses, let next = SizePlanner.corrected(
-                plan, deliveredBytes: bytes, targetBytes: options.targetBytes, durationSeconds: duration,
-                choices: options.choices
-            ) else {
-                // Never hand back a file that's over the limit.
-                try? FileManager.default.removeItem(at: outputURL)
-                throw ShrinkError.stillTooBig(bytes: bytes)
-            }
-            plan = next
         }
+
+        // Never bigger than the original: when the original (its kept part) is already under the
+        // limit, its own size is the target. A re-encode can't add detail, so more bytes would only
+        // store the same picture at a higher cost ("1.7 MB, was 533 KB" in CI run 44918792833).
+        let fullSeconds = fullDuration.seconds
+        let originalPart = originalBytes.map { Int64(Double($0) * min(1, duration / fullSeconds)) } ?? 0
+        guard originalPart > 0, originalPart < options.targetBytes else {
+            return try await attempt(under: options.targetBytes)
+        }
+        do {
+            return try await attempt(under: originalPart)
+        } catch ShrinkError.tooLongToFit {
+            // So small already (a few dozen kbps) that the encoder's minimums can't get under it:
+            // the place's limit, then. It still comes out tiny.
+        } catch ShrinkError.stillTooBig(_) {
+        }
+        return try await attempt(under: options.targetBytes)
     }
 
     /// Encodes per video, at most: the first, then corrections (or fuller tries for the whole limit).

@@ -167,6 +167,19 @@ final class VideoShrinkerTests: XCTestCase {
         try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
     }
 
+    func testAVideoAlreadyUnderTheLimitNeverComesOutBigger() async throws {
+        let source = try TestMedia.makeVideo(width: 1280, height: 720, seconds: 4, fps: 30, audio: true, bitrate: 4_000_000)
+        let original = fileSize(source)
+        let output = TestMedia.temporaryURL("mp4")
+
+        let result = try await VideoShrinker().shrink(asset: AVURLAsset(url: source), to: output,
+                                                      options: .init(targetBytes: 100_000_000))
+
+        print("NEVER-BIGGER \(result.bytes) from \(original) in \(result.passes) passes")
+        XCTAssertLessThanOrEqual(result.bytes, original, "a re-encode can't add detail, so it never spends more")
+        try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
+    }
+
     func testAStalledEncodeIsStoppedNotLeftHanging() {
         let stopped = expectation(description: "the watchdog stops it")
         let watchdog = StallWatchdog(idleTicksAllowed: 2) { stopped.fulfill() }

@@ -80,6 +80,21 @@ final class PhotoShrinkerTests: XCTestCase {
         return properties[kCGImagePropertyIPTCDictionary] as? [CFString: Any]
     }
 
+    func testAPhotoAlreadyUnderTheLimitNeverComesOutBigger() throws {
+        // A small, already-compressed JPEG (a chat download): re-saving at top quality would grow it.
+        let big = try TestMedia.makePhoto(width: 1200, height: 900)
+        let small = TestMedia.temporaryURL("jpg")
+        let first = try PhotoShrinker.shrink(imageAt: big, to: small, targetBytes: 120_000)
+        let original = PhotoShrinker.fileSize(small)
+        let output = TestMedia.temporaryURL("jpg")
+
+        let result = try PhotoShrinker.shrink(imageAt: small, to: output, targetBytes: 20_000_000)
+
+        XCTAssertLessThanOrEqual(result.bytes, original, "no bigger than the original")
+        XCTAssertEqual(max(result.pixelWidth, result.pixelHeight), max(first.pixelWidth, first.pixelHeight),
+                       "and still its full size")
+    }
+
     func testNoLimitStillMakesAJPEG() throws {
         // "Convert a photo to JPG": no limit, good quality, plays everywhere.
         let source = try TestMedia.makePhoto(width: 1200, height: 900)

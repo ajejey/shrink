@@ -34,11 +34,22 @@ public enum PhotoShrinker {
         let metadata = keptProperties(properties, removeLocation: removeLocation, keepsAll: keepsAllDetails)
         var longSide = max(width, height)
 
+        // Never bigger than the original when it's already under the limit: its own size is the target,
+        // as long as that's reachable without making the picture smaller. (Convert to JPG has no limit
+        // and may grow: a JPG is bigger than an iPhone's HEIC, and that's the job.)
+        let originalBytes = fileSize(source)
+        var target = targetBytes
+        var heldToOriginal = false
+        if let limit = targetBytes, originalBytes > 0, originalBytes < limit {
+            target = originalBytes
+            heldToOriginal = true
+        }
+
         while true {
             guard let image = render(imageSource, longSide: longSide) else {
                 throw ShrinkError.couldNotRead("The picture can't be decoded.")
             }
-            switch bestEncoding(of: image, metadata: metadata, targetBytes: targetBytes) {
+            switch bestEncoding(of: image, metadata: metadata, targetBytes: target) {
             case .fits(let data, let quality):
                 do { try data.write(to: output, options: .atomic) } catch {
                     throw ShrinkError.couldNotWrite(error.localizedDescription)
@@ -47,6 +58,11 @@ public enum PhotoShrinker {
                     url: output, bytes: Int64(data.count),
                     pixelWidth: image.width, pixelHeight: image.height, quality: quality
                 )
+            case .tooBig where heldToOriginal:
+                // Can't get under the original's size at full size: the place's limit, at full size.
+                heldToOriginal = false
+                target = targetBytes
+                continue
             case .tooBig:
                 break
             case .failed:
@@ -57,6 +73,11 @@ public enum PhotoShrinker {
             guard next >= smallestLongSide else { throw ShrinkError.limitTooSmall }
             longSide = next
         }
+    }
+
+    static func fileSize(_ url: URL) -> Int64 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
     }
 
     /// The picture upright (orientation applied), no larger than longSide.
