@@ -18,10 +18,10 @@ enum TestMedia {
     static func makeVideo(
         width: Int, height: Int, seconds: Double, fps: Int32,
         audio: Bool, rotated: Bool = false, location: Bool = false, camera: Bool = false,
-        bitrate: Int = 20_000_000, black: Bool = false
+        bitrate: Int = 20_000_000, black: Bool = false, fileType: AVFileType = .mov, metadata override: [AVMetadataItem]? = nil
     ) throws -> URL {
-        let url = temporaryURL("mov")
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let url = temporaryURL(fileType == .mp4 ? "mp4" : "mov")
+        let writer = try AVAssetWriter(outputURL: url, fileType: fileType)
         var metadata: [AVMetadataItem] = []
         let date = AVMutableMetadataItem()
         date.identifier = .quickTimeMetadataCreationDate
@@ -45,7 +45,7 @@ enum TestMedia {
                 metadata.append(item)
             }
         }
-        writer.metadata = metadata
+        writer.metadata = override ?? metadata
 
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,

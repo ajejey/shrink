@@ -474,8 +474,8 @@ final class BatchSend {
         switch state {
         case "batch-toomuch":
             batch.destination = gmail
-            batch.items = [video("Video 1", 130, 248_000_000), video("Video 2", 185, 352_000_000),
-                           video("Video 3", 100, 190_000_000)]
+            batch.items = [video("Video 1", 370, 704_000_000), video("Video 2", 425, 809_000_000),
+                           video("Video 3", 340, 647_000_000)]
             batch.replan(limit: gmail?.limitBytes)
             batch.phase = .checking
         case "batch-each":
@@ -502,13 +502,9 @@ final class BatchSend {
         }
         // Small pictures from the sample video, so the rows look like the real thing.
         batch.task = Task {
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: sample))
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 160, height: 160)
             for index in batch.items.indices {
-                let moment = CMTime(seconds: Double(4 + index * 9), preferredTimescale: 600)
-                if let frame = try? await generator.image(at: moment) {
-                    batch.items[index].thumbnail = UIImage(cgImage: frame.image)
+                if let frame = try? await QuickExtras.frame(of: AVURLAsset(url: sample), at: Double(4 + index * 9)) {
+                    batch.items[index].thumbnail = UIImage(cgImage: frame)
                 }
             }
         }

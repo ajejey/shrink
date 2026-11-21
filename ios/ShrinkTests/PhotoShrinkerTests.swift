@@ -55,20 +55,22 @@ final class PhotoShrinkerTests: XCTestCase {
         XCTAssertGreaterThan(result.pixelHeight, result.pixelWidth, "upright portrait")
     }
 
-    func testKeepAllTheDetailsKeepsTheCaptionButNotTheCity() throws {
-        let iptc: [CFString: Any] = [kCGImagePropertyIPTCCaptionAbstract: "Team photo", kCGImagePropertyIPTCCity: "Paris"]
+    /// (The caption isn't a test of this: ImageIO mirrors it into the TIFF description, which the usual
+    /// settings keep with the other camera details. Keywords live only in IPTC.)
+    func testKeepAllTheDetailsKeepsTheKeywordsButNotTheCity() throws {
+        let iptc: [CFString: Any] = [kCGImagePropertyIPTCKeywords: ["Wedding"], kCGImagePropertyIPTCCity: "Paris"]
         let source = try TestMedia.makePhoto(width: 800, height: 600, extra: [kCGImagePropertyIPTCDictionary: iptc])
-        XCTAssertEqual(iptcOf(source)?[kCGImagePropertyIPTCCaptionAbstract] as? String, "Team photo",
-                       "the test photo should start with a caption")
+        XCTAssertEqual(iptcOf(source)?[kCGImagePropertyIPTCKeywords] as? [String], ["Wedding"],
+                       "the test photo should start with a keyword")
 
         let usual = TestMedia.temporaryURL("jpg")
         _ = try PhotoShrinker.shrink(imageAt: source, to: usual, targetBytes: nil)
-        XCTAssertNil(iptcOf(usual)?[kCGImagePropertyIPTCCaptionAbstract], "the usual settings leave the caption out")
+        XCTAssertNil(iptcOf(usual)?[kCGImagePropertyIPTCKeywords], "the usual settings leave the keywords out")
 
         let all = TestMedia.temporaryURL("jpg")
         _ = try PhotoShrinker.shrink(imageAt: source, to: all, targetBytes: nil, keepsAllDetails: true)
         let kept = try XCTUnwrap(iptcOf(all))
-        XCTAssertEqual(kept[kCGImagePropertyIPTCCaptionAbstract] as? String, "Team photo")
+        XCTAssertEqual(kept[kCGImagePropertyIPTCKeywords] as? [String], ["Wedding"])
         XCTAssertNil(kept[kCGImagePropertyIPTCCity], "the city goes with the place while location is removed")
     }
 

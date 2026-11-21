@@ -1,11 +1,13 @@
 import ShrinkCore
 import SwiftUI
+import UIKit
 
 /// Send several at once: opening the pick, the check before anything starts, the work, and the
 /// finished files with one Send all.
 struct BatchSendView: View {
     let model: BatchSend
     @State private var showReport = false
+    @State private var showShare = false
 
     var body: some View {
         NavigationStack {
@@ -209,13 +211,20 @@ struct BatchSendView: View {
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
                 if !made.isEmpty {
-                    ShareLink(items: made.map { $0.url }) {
+                    Button {
+                        showShare = true
+                    } label: {
                         Label(made.count == 1 ? "Send it" : "Send all \(made.count)", systemImage: "square.and.arrow.up")
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                    .sheet(isPresented: $showShare) {
+                        ShareSheet(items: made.map { $0.url })
+                            .presentationDetents([.medium, .large])
+                            .ignoresSafeArea()
+                    }
                 }
                 if !model.retryable.isEmpty {
                     Button {
@@ -259,6 +268,19 @@ struct BatchSendView: View {
             return nil
         }.joined(separator: "\n")
     }
+}
+
+/// iOS's own share sheet for the finished files. In CI run 44900163317 a ShareLink holding two
+/// finished videos opened them about 250 times in two seconds (making previews) and the app went
+/// down; this sheet makes no previews of its own.
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [URL]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 /// One file in the batch: its small picture, its length and size, and how it's doing.

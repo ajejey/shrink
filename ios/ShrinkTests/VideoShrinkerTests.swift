@@ -166,6 +166,39 @@ final class VideoShrinkerTests: XCTestCase {
         try await assertGood(output, duration: 4, hasAudio: true, portrait: false)
     }
 
+    /// A probe, not a check: prints which kinds of metadata an MP4 written by AVAssetWriter keeps
+    /// (grep the test log for MP4-META), so the shrinker writes the kinds that survive. Never fails.
+    func testProbeWhichMetadataAnMP4Keeps() async throws {
+        func item(_ identifier: AVMetadataIdentifier, _ value: String) -> AVMetadataItem {
+            let item = AVMutableMetadataItem()
+            item.identifier = identifier
+            item.value = value as NSString
+            item.dataType = kCMMetadataBaseDataType_UTF8 as String
+            return item
+        }
+        let date = "2026-11-16T10:00:00+0000", place = "+37.3349-122.0090+010.000/"
+        let kinds: [(String, [AVMetadataItem])] = [
+            ("quicktime-metadata", [item(.quickTimeMetadataCreationDate, date), item(.quickTimeMetadataLocationISO6709, place),
+                                    item(.quickTimeMetadataModel, "iPhone")]),
+            ("common", [item(.commonIdentifierCreationDate, date), item(.commonIdentifierLocation, place),
+                        item(.commonIdentifierModel, "iPhone")]),
+            ("quicktime-userdata", [item(.quickTimeUserDataCreationDate, date), item(.quickTimeUserDataLocationISO6709, place),
+                                    item(.quickTimeUserDataModel, "iPhone")]),
+            ("iso-userdata", [item(.isoUserDataCopyright, "Test")]),
+        ]
+        for (name, items) in kinds {
+            do {
+                let url = try TestMedia.makeVideo(width: 320, height: 240, seconds: 1, fps: 10, audio: false,
+                                                  fileType: .mp4, metadata: items)
+                let back = try await AVURLAsset(url: url).load(.metadata)
+                let described = back.map { "\($0.identifier?.rawValue ?? "?") (common: \($0.commonKey?.rawValue ?? "-"))" }
+                print("MP4-META \(name): wrote \(items.count), read back \(back.count): \(described)")
+            } catch {
+                print("MP4-META \(name): FAILED \(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - Trim
 
     func testTrimKeepsOnlyThePickedPartAndStartsAtZero() async throws {
@@ -241,16 +274,21 @@ final class VideoShrinkerTests: XCTestCase {
         _ = try await generator.image(at: CMTime(seconds: min(1, duration / 2), preferredTimescale: 600))
     }
 
+    // An MP4 may hand items back in its own key space (iTunes, user data), so match the common key too.
+
     private func isLocation(_ item: AVMetadataItem) -> Bool {
-        item.identifier?.rawValue.lowercased().contains("location") == true
+        item.commonKey == .commonKeyLocation
+            || item.identifier?.rawValue.lowercased().contains("location") == true
+            || item.identifier?.rawValue.lowercased().contains("xyz") == true
     }
 
     private func isCreationDate(_ item: AVMetadataItem) -> Bool {
-        item.identifier?.rawValue.lowercased().contains("creationdate") == true
+        item.commonKey == .commonKeyCreationDate
+            || item.identifier?.rawValue.lowercased().contains("creationdate") == true
     }
 
     private func isCameraModel(_ item: AVMetadataItem) -> Bool {
-        item.identifier?.rawValue.lowercased().contains("model") == true
+        item.commonKey == .commonKeyModel || item.identifier?.rawValue.lowercased().contains("model") == true
     }
 
     private func fileSize(_ url: URL) -> Int64 {
