@@ -82,34 +82,71 @@ enum TestMedia {
         let painter = FramePainter(width: width, height: height, black: black)
         let frames = Int(seconds * Double(fps))
         let totalAudioFrames = audioInput == nil ? 0 : Int(Double(frames) / Double(fps) * Double(sampleRate))
-        var audioFramesWritten = 0
-        /// Sound up to `target` (in samples), as far as the writer takes it right now.
-        func feedAudio(until target: Int) throws {
-            guard let audioInput else { return }
-            let end = min(target, totalAudioFrames)
-            while audioFramesWritten < end && audioInput.isReadyForMoreMediaData {
-                let count = min(1024, end - audioFramesWritten)
-                audioInput.append(try toneSample(start: audioFramesWritten, count: count, sampleRate: sampleRate))
-                audioFramesWritten += count
+
+        // Picture and sound each fed on their own queue whenever the writer asks, the way Apple
+        // documents and VideoShrinker does. Feeding them in turn on one thread deadlocked the writer's
+        // interleaving now and then (CI: a 2-second clip took 43 s once, and hung 7 minutes twice).
+        let group = DispatchGroup()
+        var failure: Error?
+        let failureLock = NSLock()
+        func fail(_ error: Error) {
+            failureLock.lock()
+            if failure == nil { failure = error }
+            failureLock.unlock()
+        }
+
+        group.enter()
+        var frame = 0
+        var videoDone = false
+        videoInput.requestMediaDataWhenReady(on: DispatchQueue(label: "testmedia.video")) {
+            guard !videoDone else { return }
+            while videoInput.isReadyForMoreMediaData {
+                var buffer: CVPixelBuffer?
+                if frame < frames, let pool = adaptor.pixelBufferPool {
+                    CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+                }
+                guard frame < frames, let buffer else {
+                    if frame < frames { fail(CocoaError(.fileWriteUnknown)) }
+                    videoDone = true
+                    videoInput.markAsFinished()
+                    group.leave()
+                    return
+                }
+                painter.paint(buffer, frame: frame)
+                adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: fps))
+                frame += 1
             }
         }
-        for frame in 0..<frames {
-            // The writer interleaves, so it may want sound ahead of the picture before it takes another
-            // frame. Waiting on the picture alone hung for 7 minutes in CI (a black, 60 kbps clip).
-            try waitUntil { videoInput.isReadyForMoreMediaData } meanwhile: { try feedAudio(until: totalAudioFrames) }
-            guard let pool = adaptor.pixelBufferPool else { throw CocoaError(.fileWriteUnknown) }
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
-            guard let buffer else { throw CocoaError(.fileWriteUnknown) }
-            painter.paint(buffer, frame: frame)
-            adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: fps))
 
-            let until = Int(Double(frame + 1) / Double(fps) * Double(sampleRate))
-            try waitUntil { audioFramesWritten >= min(until, totalAudioFrames) } meanwhile: { try feedAudio(until: until) }
+        if let audioInput {
+            group.enter()
+            var written = 0
+            var audioDone = false
+            audioInput.requestMediaDataWhenReady(on: DispatchQueue(label: "testmedia.audio")) {
+                guard !audioDone else { return }
+                while audioInput.isReadyForMoreMediaData {
+                    let count = min(1024, totalAudioFrames - written)
+                    var sample: CMSampleBuffer?
+                    if count > 0 {
+                        do { sample = try toneSample(start: written, count: count, sampleRate: sampleRate) } catch { fail(error) }
+                    }
+                    guard let sample else {
+                        audioDone = true
+                        audioInput.markAsFinished()
+                        group.leave()
+                        return
+                    }
+                    audioInput.append(sample)
+                    written += count
+                }
+            }
         }
-        try waitUntil { audioFramesWritten >= totalAudioFrames } meanwhile: { try feedAudio(until: totalAudioFrames) }
-        videoInput.markAsFinished()
-        audioInput?.markAsFinished()
+
+        guard group.wait(timeout: .now() + 120) == .success else {
+            writer.cancelWriting()
+            throw TestMediaError.writerStuck
+        }
+        if let failure { throw failure }
 
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
@@ -119,19 +156,8 @@ enum TestMedia {
     }
 
     enum TestMediaError: Error {
-        /// The writer stopped taking samples for a minute: fail the test instead of hanging it.
+        /// The writer stopped taking samples: fail the test instead of hanging it.
         case writerStuck
-    }
-
-    /// Waits for `done`, doing `meanwhile` on each try; gives up after a minute.
-    private static func waitUntil(_ done: () -> Bool, meanwhile: () throws -> Void) throws {
-        let deadline = Date().addingTimeInterval(60)
-        while true {
-            try meanwhile()
-            if done() { return }
-            if Date() > deadline { throw TestMediaError.writerStuck }
-            usleep(2_000)
-        }
     }
 
     private static func toneSample(start: Int, count: Int, sampleRate: Int) throws -> CMSampleBuffer {
