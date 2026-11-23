@@ -532,9 +532,11 @@ struct PreviewArt: View {
 
     var body: some View {
         let seed = id.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
-        let hue = Double(seed % 360) / 360
-        LinearGradient(colors: [Color(hue: hue, saturation: 0.5, brightness: 0.9),
-                                Color(hue: (hue + 0.1).truncatingRemainder(dividingBy: 1), saturation: 0.7, brightness: 0.55)],
+        // A camera roll's colours: sunset, sand, foliage, sea and sky (no purples).
+        let hues = [0.04, 0.09, 0.13, 0.25, 0.33, 0.48, 0.56, 0.60]
+        let hue = hues[Int(seed % UInt32(hues.count))]
+        LinearGradient(colors: [Color(hue: hue, saturation: 0.45, brightness: 0.9),
+                                Color(hue: hue + 0.03, saturation: 0.65, brightness: 0.55)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
             .overlay {
                 Image(systemName: Self.symbols[Int(seed / 7) % Self.symbols.count])

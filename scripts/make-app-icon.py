@@ -1,5 +1,5 @@
 """Draws Shrink's app icon: two arrows pointing in to the middle (the "make it smaller" sign) in white
-on a blue-to-violet background. Writes the 1024 px PNG the asset catalog needs (no transparency,
+on the app's blue (its accent colour, AccentColor). Writes the 1024 px PNG the asset catalog needs (no transparency,
 as the App Store requires). Run: python scripts/make-app-icon.py
 """
 from pathlib import Path
@@ -10,20 +10,8 @@ SIZE = 1024
 SCALE = 4  # draw big, then shrink, for smooth edges
 OUT = Path(__file__).resolve().parent.parent / "ios/Shrink/Assets.xcassets/AppIcon.appiconset/AppIcon.png"
 
-TOP = (37, 99, 235)  # blue
-BOTTOM = (124, 58, 237)  # violet
+BLUE = (37, 99, 235)  # #2563EB, the app's AccentColor
 WHITE = (255, 255, 255)
-
-
-def gradient(size: int) -> Image.Image:
-    img = Image.new("RGB", (size, size))
-    px = img.load()
-    for y in range(size):
-        for x in range(size):
-            # Diagonal, top-left to bottom-right.
-            t = (x + y) / (2 * (size - 1))
-            px[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(TOP, BOTTOM))
-    return img
 
 
 def stroke(draw: ImageDraw.ImageDraw, points, width: int) -> None:
@@ -45,7 +33,7 @@ def arrow(draw: ImageDraw.ImageDraw, c: float, sx: int, sy: int, s: float) -> No
 
 def main() -> None:
     big = SIZE * SCALE
-    img = gradient(SIZE).resize((big, big), Image.BICUBIC)
+    img = Image.new("RGB", (big, big), BLUE)
     draw = ImageDraw.Draw(img)
     c = big / 2
     arrow(draw, c, +1, -1, SCALE)  # from the top right

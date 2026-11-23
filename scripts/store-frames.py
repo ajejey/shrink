@@ -14,8 +14,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 1320, 2868
-TOP = (37, 99, 235)      # the app icon's blue
-BOTTOM = (124, 58, 237)  # and its purple
+BLUE = (37, 99, 235)  # #2563EB: the app icon's blue and the app's AccentColor
 SCREEN_SCALE = 0.82
 BOTTOM_MARGIN = 64
 CORNER = 66
@@ -39,15 +38,6 @@ def font(size):
     return ImageFont.load_default(size)
 
 
-def background():
-    img = Image.new("RGB", (W, H))
-    draw = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / (H - 1)
-        draw.line([(0, y), (W, y)], fill=tuple(round(a + (b - a) * t) for a, b in zip(TOP, BOTTOM)))
-    return img
-
-
 def wrap(text, f, width):
     lines, line = [], ""
     for word in text.split():
@@ -62,7 +52,7 @@ def wrap(text, f, width):
 
 
 def frame(raw_path, caption, out_path):
-    canvas = background()
+    canvas = Image.new("RGB", (W, H), BLUE)
     screen = Image.open(raw_path).convert("RGB")
     sw = round(W * SCREEN_SCALE)
     sh = round(screen.height * sw / screen.width)

@@ -455,9 +455,8 @@ private struct AppName: View {
     var body: some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 7)
-                .fill(LinearGradient(colors: [Color(red: 0.145, green: 0.388, blue: 0.922),
-                                              Color(red: 0.486, green: 0.227, blue: 0.929)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                // The icon's blue (scripts/make-app-icon.py), the same in light and dark mode.
+                .fill(Color(red: 0.145, green: 0.388, blue: 0.922))
                 .frame(width: 28, height: 28)
                 .overlay {
                     Image(systemName: "arrow.down.right.and.arrow.up.left")
