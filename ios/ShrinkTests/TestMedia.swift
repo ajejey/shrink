@@ -142,7 +142,9 @@ enum TestMedia {
             }
         }
 
-        guard group.wait(timeout: .now() + 120) == .success else {
+        // The first video a test run makes waits on the simulator's encoder starting cold: 40 s on most
+        // runs, over 2 minutes on one (run 45116424546). 6 minutes stays inside the 7-minute test limit.
+        guard group.wait(timeout: .now() + 360) == .success else {
             writer.cancelWriting()
             throw TestMediaError.writerStuck
         }
