@@ -308,6 +308,14 @@ jobs:
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export"
           ls -la "$RUNNER_TEMP/export"
 
+      # Crash reports from Report a problem name code as binary+offset; these turn that back into names.
+      - name: Keep the debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsyms-${{ github.ref_name }}
+          path: ${{ runner.temp }}/Shrink.xcarchive/dSYMs
+          retention-days: 90
+
       - name: Upload to TestFlight
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
