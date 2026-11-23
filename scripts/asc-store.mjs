@@ -7,6 +7,9 @@
 //                                             screenshots" workflow's artifact)
 //   node scripts/asc-store.mjs review         App Review contact and notes
 //   node scripts/asc-store.mjs submit         attach the newest valid build and send the version for review
+//                                             (a version with no in-app purchases waiting to go along with it:
+//                                             the API can't put an app's first purchases in a submission, so the
+//                                             first version went in from the website, each one's "Add for Review")
 //
 // Text comes from store/listing-data.mjs. The App Review contact and copyright line come from a private
 // JSON file (SHRINK_STORE_PRIVATE, default notes/store-private.json):

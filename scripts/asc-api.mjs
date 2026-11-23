@@ -36,7 +36,11 @@ export async function api(method, path, body) {
   if (res.status === 204) return null
   const json = await res.json().catch(() => ({}))
   if (!res.ok) {
-    const why = (json.errors || []).map(e => `${e.title}: ${e.detail}`).join('; ') || res.statusText
+    // A 409 often says only "please check associated errors": they're in meta, keyed by what they're about.
+    const why = (json.errors || []).map(e => {
+      const more = Object.values(e.meta?.associatedErrors ?? {}).flat().map(a => [a.code, a.detail ?? a.title].filter(Boolean).join(': '))
+      return [`${e.title}: ${e.detail}`, ...more].join(' | ')
+    }).join('; ') || res.statusText
     const error = new Error(`${method} ${path} -> ${res.status} ${why}`)
     error.status = res.status
     throw error
