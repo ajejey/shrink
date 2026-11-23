@@ -12,9 +12,8 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Manual
-  configs:
-    Release:
-      CODE_SIGN_IDENTITY: Apple Distribution
+  # Release signing is set on each target below: XcodeGen gives every iOS target its own
+  # CODE_SIGN_IDENTITY ("iPhone Developer"), which would beat a project-level one.
 
 targets:
   # The engine: video and photo shrinking, presets. Shared by the app and (later) the Share Extension.
@@ -31,6 +30,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
+      configs:
+        Release:
+          CODE_SIGN_IDENTITY: Apple Distribution
 
   Shrink:
     type: application
@@ -78,6 +80,7 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
       configs:
         Release:
+          CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: $(SHRINK_PROVISIONING_PROFILE)
 
   # "Shrink" in the share sheet (Photos, WhatsApp, Files…): the same job without opening the app.
@@ -115,6 +118,7 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
       configs:
         Release:
+          CODE_SIGN_IDENTITY: Apple Distribution
           PROVISIONING_PROFILE_SPECIFIER: $(SHRINK_SHARE_PROVISIONING_PROFILE)
 
   # Encoding checks on the simulator: size under target, plays, sound kept, rotation, duration.
