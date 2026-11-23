@@ -428,7 +428,9 @@ final class BatchSend {
     // MARK: - Screenshots
 
     /// A batch frozen in one state for CI screenshots (`-screenshot batch-…`). batch-done really
-    /// shrinks two copies of tmp/sample-video.mp4 (CI copies it in) for one Gmail email.
+    /// shrinks two copies of tmp/batch-sample.mp4 (8 s of 720p at ~3 Mbps, like a phone clip; CI copies
+    /// it in) for one Gmail email. (sample-video.mp4 has only ~50 kbps of picture, below what the
+    /// encoder goes to, so its copies came out bigger than it: "1.7 MB, was 533 KB".)
     static func preview(_ state: String) -> BatchSend {
         let batch = BatchSend()
         let gmail = Destination.find(id: "gmail")
@@ -437,10 +439,11 @@ final class BatchSend {
         batch.isShowing = true
 
         if state == "batch-done", let gmail {
+            let clip = FileManager.default.temporaryDirectory.appendingPathComponent("batch-sample.mp4")
             // Copies named like the Photos picker's, so they're cleaned up the same way.
             func copyOfSample() async throws -> (url: URL, isVideo: Bool) {
                 let copy = FileManager.default.temporaryDirectory.appendingPathComponent("picked-\(UUID().uuidString).mp4")
-                try FileManager.default.copyItem(at: sample, to: copy)
+                try FileManager.default.copyItem(at: clip, to: copy)
                 return (copy, true)
             }
             batch.start(loaders: [copyOfSample, copyOfSample], kinds: [true, true], destination: gmail, removeLocation: true)
