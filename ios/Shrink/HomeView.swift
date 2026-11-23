@@ -26,6 +26,8 @@ struct HomeView: View {
     @State private var showSeveralPicker = false
     @State private var severalItems: [PhotosPickerItem] = []
     @State private var showProSeveral = false
+    @State private var showCrashReport = false
+    private let crashes = CrashReports.shared
     private let router = ShortcutRouter.shared
     @Environment(\.requestReview) private var requestReview
     @Environment(\.scenePhase) private var scenePhase
@@ -42,6 +44,12 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    if let crash = crashes.pending, SupportContact.reportURL != nil {
+                        CrashCard(onReport: { showCrashReport = true }, onDismiss: { crashes.clear() })
+                            .sheet(isPresented: $showCrashReport) {
+                                ReportProblemView(report: ProblemReport(crash: crash), onSent: { crashes.clear() })
+                            }
+                    }
                     sendCard
                     FreeUpSpaceCard(model: freeUp, cleanup: cleanup,
                                     onOpen: { showFreeUp = true }, onOpenCleanup: { showCleanup = true })
@@ -100,6 +108,7 @@ struct HomeView: View {
             }
         }
         .task {
+            crashes.start()
             freeUp.restoreInterruptedRun()
             await Store.shared.load()
             await freeUp.refreshAndScanIfNeeded()
@@ -235,6 +244,36 @@ struct HomeView: View {
         } else if case .done = job.phase, ReviewPrompt.recordSuccess() {
             requestReview()
         }
+    }
+}
+
+/// After a crash: an offer to send iOS's details of it. Nothing goes unless they tap Report it, then Send.
+private struct CrashCard: View {
+    let onReport: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label {
+                Text("Shrink closed unexpectedly")
+                    .font(.headline)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+            Text("Sending what happened helps fix it. You'll see exactly what goes before anything is sent.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button("Report it", action: onReport)
+                    .buttonStyle(.borderedProminent)
+                Button("Not now", action: onDismiss)
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.regular)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
     }
 }
 

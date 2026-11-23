@@ -429,8 +429,7 @@ final class BatchSend {
 
     /// A batch frozen in one state for CI screenshots (`-screenshot batch-…`). batch-done really
     /// shrinks two copies of tmp/batch-sample.mp4 (8 s of 720p at ~3 Mbps, like a phone clip; CI copies
-    /// it in) for one Gmail email. (sample-video.mp4 has only ~50 kbps of picture, below what the
-    /// encoder goes to, so its copies came out bigger than it: "1.7 MB, was 533 KB".)
+    /// it in) for one Gmail email: short, so the real run fits in the screenshot's wait.
     static func preview(_ state: String) -> BatchSend {
         let batch = BatchSend()
         let gmail = Destination.find(id: "gmail")

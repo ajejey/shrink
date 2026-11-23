@@ -63,7 +63,8 @@ struct SettingsView: View {
                             }
                         }
                         .sheet(isPresented: $showReport) {
-                            ReportProblemView(report: ProblemReport())
+                            ReportProblemView(report: ProblemReport(crash: CrashReports.shared.pending),
+                                              onSent: { CrashReports.shared.clear() })
                         }
                     }
                 }

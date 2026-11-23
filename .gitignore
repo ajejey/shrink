@@ -17,3 +17,7 @@ notes/
 CLAUDE.md
 CLAUDE.local.md
 .claude/
+
+# Store screenshots downloaded from the ios-store workflow
+store/raw/
+store/framed/

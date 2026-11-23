@@ -1,0 +1,10 @@
+[
+  { "state": "trim", "file": "01-compress-for-discord.png", "caption": "Compress a video for Discord" },
+  { "state": "freeup-pick", "file": "02-free-up-storage.png", "caption": "Free up iPhone storage" },
+  { "state": "cleanup-piles", "file": "03-clean-up-photos.png", "caption": "Clean up photos you don't need" },
+  { "state": "places", "file": "04-any-size-limit.png", "caption": "Make it fit any size limit" },
+  { "state": "done", "file": "05-ready-to-send.png", "caption": "Ready to send, location removed" },
+  { "state": "quick-gif-done", "file": "06-make-a-gif.png", "caption": "Make a GIF from a video" },
+  { "state": "batch-check", "file": "07-several-at-once.png", "caption": "Send several at once with Pro" },
+  { "state": "freeup-home", "file": "08-on-your-iphone.png", "caption": "Everything stays on your iPhone" }
+]

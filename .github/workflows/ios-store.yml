@@ -1,0 +1,71 @@
+# The App Store's 6.9" iPhone screenshots: real screens from the app on the biggest iPhone simulator,
+# each under its job in plain words (store/screenshots.json, framed by scripts/store-frames.py).
+# Run by hand: gh workflow run ios-store.yml --repo ajejey/shrink
+# Then: gh run download <id> --repo ajejey/shrink -n store-screenshots -D store/
+# and node scripts/asc-store.mjs screenshots (with the owner's OK).
+name: iOS store screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  shots:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: Pick the biggest iPhone simulator
+        id: sim
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | node -e '
+            const all = Object.values(JSON.parse(require("fs").readFileSync(0, "utf8")).devices).flat()
+            const phones = all.filter(d => /^iPhone \d+ Pro Max$/.test(d.name)).sort((a, b) => b.name.localeCompare(a.name, "en", { numeric: true }))
+            console.log((phones[0] || all.find(d => d.name.startsWith("iPhone"))).udid)')
+          echo "udid=$DEVICE" >> "$GITHUB_OUTPUT"
+
+      - name: Build the app for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild build -project ios/Shrink.xcodeproj -scheme Shrink \
+            -destination "id=${{ steps.sim.outputs.udid }}" -derivedDataPath build CODE_SIGNING_ALLOWED=NO \
+            | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          test -d build/Build/Products/Debug-iphonesimulator/Shrink.app
+
+      - name: Take the screenshots
+        run: |
+          DEVICE=${{ steps.sim.outputs.udid }}
+          APP=build/Build/Products/Debug-iphonesimulator/Shrink.app
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl status_bar "$DEVICE" override --time 9:41 --batteryState charged --batteryLevel 100 \
+            --dataNetwork wifi --wifiBars 3 --cellularMode active --cellularBars 4
+          xcrun simctl install "$DEVICE" "$APP"
+          xcrun simctl launch "$DEVICE" com.useshrink.app && sleep 4
+          cp ios/ScreenshotMedia/sample-video.mp4 ios/ScreenshotMedia/batch-sample.mp4 \
+            "$(xcrun simctl get_app_container "$DEVICE" com.useshrink.app data)/tmp/"
+          mkdir -p store/raw
+          for state in $(node -e 'for (const s of require("./store/screenshots.json")) console.log(s.state)'); do
+            xcrun simctl terminate "$DEVICE" com.useshrink.app || true
+            xcrun simctl launch "$DEVICE" com.useshrink.app -screenshot "$state"
+            sleep 8 && xcrun simctl io "$DEVICE" screenshot "store/raw/$state.png"
+          done
+          xcrun simctl shutdown "$DEVICE" || true
+
+      - name: Put each under its caption
+        run: |
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
+          python3 scripts/store-frames.py store/screenshots.json store/raw store/framed
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: store-screenshots
+          path: |
+            store/raw
+            store/framed

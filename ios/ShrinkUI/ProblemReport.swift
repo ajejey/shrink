@@ -23,6 +23,8 @@ struct ProblemReport {
     var job: String?
     /// The message the person saw.
     var problem: String?
+    /// After a crash: iOS's summary of it (CrashReports.swift), shown on the form like everything else.
+    var crash: String? = nil
 
     struct Detail: Hashable {
         let label: String
@@ -37,6 +39,7 @@ struct ProblemReport {
         ]
         if let job { rows.append(Detail(label: "Job", value: job)) }
         if let problem { rows.append(Detail(label: "What went wrong", value: problem)) }
+        if let crash { rows.append(Detail(label: "Crash details", value: crash)) }
         return rows
     }
 
@@ -55,7 +58,8 @@ struct ProblemReport {
             "device": Self.deviceModel,
             "ios": UIDevice.current.systemVersion,
             "job": job ?? "",
-            "error": problem ?? "",
+            // The inbox has one column for what went wrong; a crash's summary goes there too.
+            "error": [problem, crash].compactMap { $0 }.joined(separator: "\n\n"),
         ])
         let (data, response) = try await URLSession.shared.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200,
@@ -88,6 +92,8 @@ struct ReportProblemView: View {
     let report: ProblemReport
     /// For CI screenshots: the screen after a report went through.
     var showsSent = false
+    /// Runs once the report is in (a crash report is then not offered again).
+    var onSent: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var message = ""
     @State private var replyTo = ""
@@ -96,8 +102,9 @@ struct ReportProblemView: View {
     @State private var sent = false
     @FocusState private var writing: Bool
 
+    /// A crash report can go without words: its details say what happened.
     private var canSend: Bool {
-        !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
+        (!message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || report.crash != nil) && !sending
     }
 
     var body: some View {
@@ -183,12 +190,14 @@ struct ReportProblemView: View {
     private func send() {
         sending = true
         failed = false
-        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = typed.isEmpty && report.crash != nil ? "(Crash report, nothing written)" : typed
         let email = replyTo.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             do {
                 try await report.send(message: text, replyTo: email)
                 sent = true
+                onSent?()
             } catch {
                 failed = true
             }
