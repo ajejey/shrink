@@ -51,15 +51,19 @@ def wrap(text, f, width):
     return lines
 
 
-def frame(raw_path, caption, out_path):
+def frame(raw_path, caption, out_path, keep_top=None):
     canvas = Image.new("RGB", (W, H), BLUE)
     screen = Image.open(raw_path).convert("RGB")
     sw = round(W * SCREEN_SCALE)
+    # Where a full screen's top goes, so every caption sits at the same height across the set.
+    top = H - round(screen.height * sw / screen.width) - BOTTOM_MARGIN
+    if keep_top:
+        # "keepTop" in screenshots.json: the screen ends above a row the display cuts in half.
+        screen = screen.crop((0, 0, screen.width, keep_top))
     sh = round(screen.height * sw / screen.width)
     screen = screen.resize((sw, sh), Image.LANCZOS)
     mask = Image.new("L", (sw, sh), 0)
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=CORNER, fill=255)
-    top = H - sh - BOTTOM_MARGIN
     canvas.paste(screen, ((W - sw) // 2, top), mask)
 
     # The caption: the biggest text, the job in the person's words, at most two lines.
@@ -86,7 +90,7 @@ def main():
         raw = raw_dir / f"{shot['state']}.png"
         if not raw.exists():
             sys.exit(f"missing {raw}")
-        frame(raw, shot["caption"], out_dir / shot["file"])
+        frame(raw, shot["caption"], out_dir / shot["file"], shot.get("keepTop"))
         print("framed", shot["file"])
 
 

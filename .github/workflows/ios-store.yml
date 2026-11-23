@@ -1,27 +1,47 @@
 # The App Store's 6.9" iPhone screenshots: real screens from the app on the biggest iPhone simulator,
 # each under its job in plain words (store/screenshots.json, framed by scripts/store-frames.py).
 # Run by hand: gh workflow run ios-store.yml --repo ajejey/shrink
+# Only new captions or crops: add -f frames_from=<an earlier run's id> to reuse its raw screens (minutes, no build).
 # Then: gh run download <id> --repo ajejey/shrink -n store-screenshots -D store/
 # and node scripts/asc-store.mjs screenshots (with the owner's OK).
 name: iOS store screenshots
 
 on:
   workflow_dispatch:
+    inputs:
+      frames_from:
+        description: "Reuse this earlier run's raw screens (its id) and only redo the frames"
+        required: false
+        default: ""
 
 jobs:
   shots:
     runs-on: macos-26
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
 
+      - name: Get the earlier run's raw screens
+        if: inputs.frames_from != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: store-screenshots
+          path: store
+          run-id: ${{ inputs.frames_from }}
+          github-token: ${{ github.token }}
+
       - name: Generate the Xcode project
+        if: inputs.frames_from == ''
         run: |
           brew install xcodegen
           cd ios && xcodegen generate
 
       - name: Pick the biggest iPhone simulator
         id: sim
+        if: inputs.frames_from == ''
         run: |
           DEVICE=$(xcrun simctl list devices available -j | node -e '
             const all = Object.values(JSON.parse(require("fs").readFileSync(0, "utf8")).devices).flat()
@@ -30,6 +50,7 @@ jobs:
           echo "udid=$DEVICE" >> "$GITHUB_OUTPUT"
 
       - name: Build the app for the simulator
+        if: inputs.frames_from == ''
         run: |
           set -o pipefail
           xcodebuild build -project ios/Shrink.xcodeproj -scheme Shrink \
@@ -38,6 +59,7 @@ jobs:
           test -d build/Build/Products/Debug-iphonesimulator/Shrink.app
 
       - name: Take the screenshots
+        if: inputs.frames_from == ''
         run: |
           DEVICE=${{ steps.sim.outputs.udid }}
           APP=build/Build/Products/Debug-iphonesimulator/Shrink.app

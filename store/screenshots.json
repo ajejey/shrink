@@ -6,5 +6,5 @@
   { "state": "done", "file": "05-ready-to-send.png", "caption": "Ready to send, location removed" },
   { "state": "quick-gif-done", "file": "06-make-a-gif.png", "caption": "Make a GIF from a video" },
   { "state": "batch-check", "file": "07-several-at-once.png", "caption": "Send several at once with Pro" },
-  { "state": "freeup-home", "file": "08-on-your-iphone.png", "caption": "Everything stays on your iPhone" }
+  { "state": "freeup-home", "file": "08-on-your-iphone.png", "caption": "Everything stays on your iPhone", "keepTop": 2790 }
 ]
