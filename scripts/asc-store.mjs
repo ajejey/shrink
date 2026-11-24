@@ -216,8 +216,11 @@ if (command === 'version') {
 
 if (command === 'submit') {
   const { app, version } = await appAndVersion()
-  const build = (await api('GET', `/v1/builds?filter[app]=${app.id}&filter[processingState]=VALID&sort=-uploadedDate&limit=1`)).data[0]
-  if (!build) throw new Error('No valid build')
+  // Only a build of this version: the newest valid build overall can still be the last version's while
+  // Apple processes the new upload.
+  const versionString = version.attributes.versionString
+  const build = (await api('GET', `/v1/builds?filter[app]=${app.id}&filter[processingState]=VALID&filter[preReleaseVersion.version]=${versionString}&sort=-uploadedDate&limit=1`)).data[0]
+  if (!build) throw new Error(`No valid build of version ${versionString} yet (Apple may still be processing it)`)
   await api('PATCH', `/v1/appStoreVersions/${version.id}/relationships/build`, { data: { type: 'builds', id: build.id } })
   console.log('build attached', build.attributes.version)
   const open = (await api('GET', `/v1/reviewSubmissions?filter[app]=${app.id}&filter[state]=READY_FOR_REVIEW`)).data[0]
