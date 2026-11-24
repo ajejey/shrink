@@ -63,6 +63,36 @@ function doGet() {
   return reply(true)
 }
 
+// The privacy policy says reports are kept for up to 12 months. Run by a daily time-driven trigger
+// (Triggers > Add trigger > deleteOldReports, Time-driven, Day timer): removes sheet rows and report
+// emails older than that. Run it once from the editor first to allow Gmail access.
+const KEEP_MONTHS = 12
+
+function deleteOldReports() {
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - KEEP_MONTHS)
+
+  // Rows are added in order, so the old ones are the first rows after the headers.
+  const sheet = reportSheet()
+  const last = sheet.getLastRow()
+  let old = 0
+  if (last > 1) {
+    const received = sheet.getRange(2, 1, last - 1, 1).getValues()
+    while (old < received.length && received[old][0] instanceof Date && received[old][0] < cutoff) old++
+    if (old > 0) sheet.deleteRows(2, old)
+  }
+
+  // The report emails, with any replies in their threads.
+  let threads = 0
+  const query = 'subject:"Shrink report:" older_than:' + KEEP_MONTHS + 'm'
+  // Trashed threads drop out of the search, so each pass gets the next 100 (capped, to never spin).
+  for (let pass = 0, batch = GmailApp.search(query, 0, 100); batch.length && pass < 50; pass++, batch = GmailApp.search(query, 0, 100)) {
+    GmailApp.moveThreadsToTrash(batch)
+    threads += batch.length
+  }
+  Logger.log('Deleted ' + old + ' rows and ' + threads + ' email threads from before ' + cutoff.toISOString())
+}
+
 // Run once from the editor: checks the sheet, writes its headers and asks for the permissions.
 function setup() {
   Logger.log('Reports go to ' + reportSheet().getParent().getUrl())
