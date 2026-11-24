@@ -33,7 +33,12 @@ if (!vendor) {
       .catch(e => { if (e.status === 410 || /not available|no sales/i.test(e.message)) return null; throw e })
     if (!gz) { console.log(day, '  (no report: nothing sold or not out yet)'); continue }
     const [head, ...rows] = gunzipSync(gz).toString('utf8').trim().split('\n').map(l => l.split('\t'))
-    const col = name => head.indexOf(name)
+    const col = name => {
+      const i = head.indexOf(name)
+      // A renamed column would otherwise count as zero sales without a word.
+      if (i < 0) throw new Error(`Apple's sales report has no "${name}" column any more`)
+      return i
+    }
     const count = { downloads: 0, again: 0, updates: 0, proLifetime: 0, proYearly: 0 }
     const proceeds = {}
     for (const r of rows) {
