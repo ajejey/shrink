@@ -48,6 +48,19 @@ export async function api(method, path, body) {
   return json
 }
 
+/** A GET whose answer is a file (sales reports come gzipped): the bytes, or null on 404 (no report). */
+export async function file(path) {
+  const res = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${token()}`, Accept: 'application/a-gzip' } })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}))
+    const error = new Error(`GET ${path} -> ${res.status} ${(json.errors || []).map(e => e.detail).join('; ') || res.statusText}`)
+    error.status = res.status
+    throw error
+  }
+  return Buffer.from(await res.arrayBuffer())
+}
+
 /** A GET that's allowed to find nothing: null on 404. */
 export async function maybe(path) {
   try {

@@ -190,6 +190,7 @@ struct PrivacyView: View {
                 Text("Shrink has no accounts, no ads and no tracking. It collects nothing unless you send a report.")
                 Text("Photos access is used only on your iPhone: to list your videos' sizes, to sort your photos into piles like duplicates and screenshots, and to save the smaller copies and still photos you ask for.")
                 Text("If you send a report from Report a problem, it includes what you wrote, your email if you add it, and the details listed on the form: app version, iPhone model, iOS version, the job and what went wrong, and after a crash, iOS's summary of it (what kind of crash and where in Shrink's code), if you choose to send it. Never your videos, photos or their names. It goes to Shrink's support inbox (through Google, which runs it) and is used only to fix problems and answer you.")
+                Text("Reports are kept for up to 12 months, then deleted. To have yours deleted sooner, or with any question about your privacy, email [useshrink.support@gmail.com](mailto:useshrink.support@gmail.com).")
                 Text("Purchases are handled by Apple. Shrink never sees your payment details.")
             } footer: {
                 Text("Last updated November 2026.")

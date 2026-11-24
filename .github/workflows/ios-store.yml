@@ -72,7 +72,11 @@ jobs:
           cp ios/ScreenshotMedia/sample-video.mp4 ios/ScreenshotMedia/batch-sample.mp4 \
             "$(xcrun simctl get_app_container "$DEVICE" com.useshrink.app data)/tmp/"
           mkdir -p store/raw
-          for state in $(node -e 'for (const s of require("./store/screenshots.json")) console.log(s.state)'); do
+          # Every state the main page and the custom product pages use, each once.
+          for state in $(node -e '
+            const states = require("./store/screenshots.json").map(s => s.state)
+            for (const p of require("./store/pages.json").pages) states.push(...p.screenshots.map(s => s.state))
+            console.log([...new Set(states)].join("\n"))'); do
             xcrun simctl terminate "$DEVICE" com.useshrink.app || true
             xcrun simctl launch "$DEVICE" com.useshrink.app -screenshot "$state"
             sleep 8 && xcrun simctl io "$DEVICE" screenshot "store/raw/$state.png"
@@ -83,6 +87,7 @@ jobs:
         run: |
           python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet pillow
           python3 scripts/store-frames.py store/screenshots.json store/raw store/framed
+          python3 scripts/store-frames.py store/pages.json store/raw store/pages
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -91,3 +96,4 @@ jobs:
           path: |
             store/raw
             store/framed
+            store/pages

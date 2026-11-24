@@ -83,15 +83,25 @@ def frame(raw_path, caption, out_path, keep_top=None):
     canvas.save(out_path, "PNG")
 
 
-def main():
-    spec, raw_dir, out_dir = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+def frame_all(shots, raw_dir, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
-    for shot in json.loads(spec.read_text()):
+    for shot in shots:
         raw = raw_dir / f"{shot['state']}.png"
         if not raw.exists():
             sys.exit(f"missing {raw}")
         frame(raw, shot["caption"], out_dir / shot["file"], shot.get("keepTop"))
-        print("framed", shot["file"])
+        print("framed", out_dir / shot["file"])
+
+
+def main():
+    """A list (store/screenshots.json) frames into out_dir; store/pages.json frames each page into out_dir/<id>."""
+    spec, raw_dir, out_dir = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+    data = json.loads(spec.read_text())
+    if isinstance(data, dict):
+        for page in data["pages"]:
+            frame_all(page["screenshots"], raw_dir, out_dir / page["id"])
+    else:
+        frame_all(data, raw_dir, out_dir)
 
 
 if __name__ == "__main__":

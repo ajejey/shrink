@@ -1,0 +1,57 @@
+{
+  "_about": "Custom product pages: one per job, each with its own screenshots and the search keywords it answers. Keywords must already be in the app's approved keyword field (store/listing-data.mjs). Framed by the iOS store screenshots workflow into store/pages/<id>/; published by scripts/asc-pages.mjs.",
+  "pages": [
+    {
+      "id": "discord",
+      "name": "Compress a video for Discord",
+      "keywords": ["discord"],
+      "promotionalText": "Make any video fit Discord's 20 MB limit. Trim it, see that it fits before you start, and send it. Everything stays on your iPhone.",
+      "screenshots": [
+        { "state": "trim", "file": "01-compress-for-discord.png", "caption": "Compress a video for Discord" },
+        { "state": "done", "file": "02-ready-for-discord.png", "caption": "Ready to send on Discord" },
+        { "state": "places", "file": "03-any-size-limit.png", "caption": "Make it fit any size limit" },
+        { "state": "quick-gif-done", "file": "04-make-a-gif.png", "caption": "Make a GIF from a video" },
+        { "state": "freeup-pick", "file": "05-free-up-storage.png", "caption": "Free up iPhone storage" }
+      ]
+    },
+    {
+      "id": "email",
+      "name": "Make a video fit in an email",
+      "keywords": ["email", "gmail"],
+      "promotionalText": "Make a video small enough to attach to an email: Gmail's 25 MB or Outlook's 20 MB. With Pro, several fit in one email together. Everything stays on your iPhone.",
+      "screenshots": [
+        { "state": "trim-gmail", "file": "01-fit-in-an-email.png", "caption": "Make a video fit in an email" },
+        { "state": "done-gmail", "file": "02-ready-to-attach.png", "caption": "Ready to attach to an email" },
+        { "state": "batch-check", "file": "03-several-in-one-email.png", "caption": "Send several in one email with Pro" },
+        { "state": "places", "file": "04-any-size-limit.png", "caption": "Make it fit any size limit" },
+        { "state": "freeup-pick", "file": "05-free-up-storage.png", "caption": "Free up iPhone storage" }
+      ]
+    },
+    {
+      "id": "whatsapp",
+      "name": "Send a big video on WhatsApp",
+      "keywords": ["whatsapp"],
+      "promotionalText": "Make a long video small enough to send on WhatsApp, without it turning blurry. Trim it, shrink it, send it. Everything stays on your iPhone.",
+      "screenshots": [
+        { "state": "trim-whatsapp", "file": "01-send-on-whatsapp.png", "caption": "Send a big video on WhatsApp" },
+        { "state": "done-whatsapp", "file": "02-ready-for-whatsapp.png", "caption": "Ready to send on WhatsApp" },
+        { "state": "places", "file": "03-any-size-limit.png", "caption": "Make it fit any size limit" },
+        { "state": "quick-gif-done", "file": "04-make-a-gif.png", "caption": "Make a GIF from a video" },
+        { "state": "freeup-pick", "file": "05-free-up-storage.png", "caption": "Free up iPhone storage" }
+      ]
+    },
+    {
+      "id": "storage",
+      "name": "iPhone storage full",
+      "keywords": ["cleaner", "duplicate", "photos"],
+      "promotionalText": "iPhone storage full? Shrink your biggest videos to a fraction of their size and clear duplicate and similar photos. Every copy is checked before anything goes.",
+      "screenshots": [
+        { "state": "freeup-pick", "file": "01-free-up-storage.png", "caption": "Free up iPhone storage" },
+        { "state": "cleanup-piles", "file": "02-clean-up-photos.png", "caption": "Clean up photos you don't need" },
+        { "state": "cleanup-similar", "file": "03-similar-shots.png", "caption": "Keep the best of similar shots" },
+        { "state": "freeup-check", "file": "04-check-first.png", "caption": "See exactly what goes before it goes" },
+        { "state": "freeup-done", "file": "05-space-freed.png", "caption": "See how much space you got back" }
+      ]
+    }
+  ]
+}

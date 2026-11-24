@@ -232,13 +232,17 @@ final class ShrinkJob {
 
     /// A job frozen in one state, for CI screenshots (`-screenshot trim|shrinking|done|failed`).
     /// "trim" opens tmp/sample-video.mp4, which CI copies into the app's folder first.
+    /// Discord unless the state names another preset: "trim-gmail", "done-whatsapp" (the store's
+    /// custom product pages, one per job).
     static func preview(_ state: String) -> ShrinkJob {
         let job = ShrinkJob()
-        job.title = "Compress for Discord"
-        job.limitLabel = "20 MB"
-        job.targetBytes = 20_000_000
+        let parts = state.split(separator: "-", maxSplits: 1).map(String.init)
+        let place = parts.count == 2 ? Destination.find(id: parts[1]) : nil
+        job.title = place?.title ?? "Compress for Discord"
+        job.limitLabel = place?.limitLabel ?? "20 MB"
+        job.targetBytes = place?.limitBytes ?? 20_000_000
         job.isShowing = true
-        switch state {
+        switch parts[0] {
         case "trim":
             let sample = FileManager.default.temporaryDirectory.appendingPathComponent("sample-video.mp4")
             job.task = Task {
@@ -246,7 +250,11 @@ final class ShrinkJob {
             }
         case "done":
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("Shrink-preview.mp4")
-            job.phase = .done(Finished(url: url, bytes: 19_040_000, originalBytes: 61_500_000))
+            // A finished file just under the place's limit, from an original well over it.
+            let limit = job.targetBytes ?? 20_000_000
+            let bytes = limit == 20_000_000 ? 19_040_000 : limit / 100 * 96
+            let original = limit == 20_000_000 ? 61_500_000 : limit * 3 - limit / 7
+            job.phase = .done(Finished(url: url, bytes: bytes, originalBytes: original))
         case "failed":
             job.offersAnother = true
             job.phase = .failed("Couldn't open that video.")

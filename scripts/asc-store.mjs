@@ -6,6 +6,7 @@
 //   node scripts/asc-store.mjs screenshots    the 6.9" iPhone set from store/framed (the "iOS store
 //                                             screenshots" workflow's artifact)
 //   node scripts/asc-store.mjs review         App Review contact and notes
+//   node scripts/asc-store.mjs version 1.0.1  make the next version's draft (copies the live one's text)
 //   node scripts/asc-store.mjs submit         attach the newest valid build and send the version for review
 //                                             (a version with no in-app purchases waiting to go along with it:
 //                                             the API can't put an app's first purchases in a submission, so the
@@ -101,6 +102,8 @@ if (command === 'listing') {
     if (existingInfo) await api('PATCH', `/v1/appInfoLocalizations/${existingInfo.id}`, { data: { type: 'appInfoLocalizations', id: existingInfo.id, attributes: infoAttrs } })
     else await api('POST', '/v1/appInfoLocalizations', { data: { type: 'appInfoLocalizations', attributes: { locale, ...infoAttrs }, relationships: { appInfo: { data: { type: 'appInfos', id: info.id } } } } })
     const versionAttrs = { description: l.description, keywords: l.keywords, promotionalText: l.promotionalText, supportUrl: l.supportUrl, marketingUrl: l.marketingUrl }
+    const notes = data.RELEASE_NOTES?.[version.attributes.versionString]
+    if (notes) versionAttrs.whatsNew = notes
     const existingVersion = (await api('GET', `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations`)).data.find(x => x.attributes.locale === locale)
     if (existingVersion) await api('PATCH', `/v1/appStoreVersionLocalizations/${existingVersion.id}`, { data: { type: 'appStoreVersionLocalizations', id: existingVersion.id, attributes: versionAttrs } })
     else await api('POST', '/v1/appStoreVersionLocalizations', { data: { type: 'appStoreVersionLocalizations', attributes: { locale, ...versionAttrs }, relationships: { appStoreVersion: { data: { type: 'appStoreVersions', id: version.id } } } } })
@@ -192,6 +195,25 @@ if (command === 'review') {
   console.log('review contact and notes set (no demo account: Shrink has no sign-in)')
 }
 
+if (command === 'version') {
+  // The next version's draft: App Store Connect copies the live version's text and screenshots into it.
+  const versionString = process.argv[3]
+  if (!/^\d+\.\d+(\.\d+)?$/.test(versionString ?? '')) throw new Error('usage: node scripts/asc-store.mjs version 1.0.1')
+  const app = await findApp()
+  const editable = (await api('GET', `/v1/apps/${app.id}/appStoreVersions?filter[platform]=IOS&filter[appStoreState]=${EDITABLE}`)).data[0]
+  if (editable) {
+    if (editable.attributes.versionString !== versionString) {
+      await api('PATCH', `/v1/appStoreVersions/${editable.id}`, { data: { type: 'appStoreVersions', id: editable.id, attributes: { versionString } } })
+    }
+    console.log('version', versionString, 'ready to edit (', editable.attributes.appStoreState, ')')
+  } else {
+    const made = (await api('POST', '/v1/appStoreVersions', { data: { type: 'appStoreVersions',
+      attributes: { platform: 'IOS', versionString, releaseType: 'AFTER_APPROVAL' },
+      relationships: { app: { data: { type: 'apps', id: app.id } } } } })).data
+    console.log('version', made.attributes.versionString, 'made:', made.attributes.appStoreState)
+  }
+}
+
 if (command === 'submit') {
   const { app, version } = await appAndVersion()
   const build = (await api('GET', `/v1/builds?filter[app]=${app.id}&filter[processingState]=VALID&sort=-uploadedDate&limit=1`)).data[0]
@@ -200,13 +222,18 @@ if (command === 'submit') {
   console.log('build attached', build.attributes.version)
   const open = (await api('GET', `/v1/reviewSubmissions?filter[app]=${app.id}&filter[state]=READY_FOR_REVIEW`)).data[0]
   const submission = open ?? (await api('POST', '/v1/reviewSubmissions', { data: { type: 'reviewSubmissions', attributes: { platform: 'IOS' }, relationships: { app: { data: { type: 'apps', id: app.id } } } } })).data
-  const items = await api('GET', `/v1/reviewSubmissions/${submission.id}/items`)
-  if (!items.data.length) await api('POST', '/v1/reviewSubmissionItems', { data: { type: 'reviewSubmissionItems', relationships: { reviewSubmission: { data: { type: 'reviewSubmissions', id: submission.id } }, appStoreVersion: { data: { type: 'appStoreVersions', id: version.id } } } } })
+  // The submission may already hold custom product pages (asc-pages.mjs add); they go with the version.
+  const items = (await api('GET', `/v1/reviewSubmissions/${submission.id}/items?include=appStoreVersion`)).data
+  if (!items.some(i => i.relationships?.appStoreVersion?.data?.id === version.id)) {
+    await api('POST', '/v1/reviewSubmissionItems', { data: { type: 'reviewSubmissionItems', relationships: { reviewSubmission: { data: { type: 'reviewSubmissions', id: submission.id } }, appStoreVersion: { data: { type: 'appStoreVersions', id: version.id } } } } })
+  }
+  const others = items.filter(i => i.relationships?.appStoreVersion?.data?.id !== version.id).length
+  console.log('in the submission: version', version.attributes.versionString, others ? `and ${others} other item(s)` : '')
   const sent = await api('PATCH', `/v1/reviewSubmissions/${submission.id}`, { data: { type: 'reviewSubmissions', id: submission.id, attributes: { submitted: true } } })
   console.log('submitted for review:', sent.data.attributes.state)
 }
 
-if (!['inspect', 'listing', 'screenshots', 'review', 'submit'].includes(command)) {
-  console.error('usage: node scripts/asc-store.mjs inspect|listing|screenshots|review|submit')
+if (!['inspect', 'listing', 'screenshots', 'review', 'version', 'submit'].includes(command)) {
+  console.error('usage: node scripts/asc-store.mjs inspect|listing|screenshots|review|version <x.y.z>|submit')
   process.exit(2)
 }

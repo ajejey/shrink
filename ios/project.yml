@@ -9,7 +9,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: 8L2P8U42YK
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "1.0.1"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Manual
   # Release signing is set on each target below: XcodeGen gives every iOS target its own

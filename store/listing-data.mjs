@@ -64,6 +64,25 @@ export const LOCALES = {
     marketingUrl: SUPPORT_URL,
     privacyPolicyUrl: PRIVACY_URL,
   },
+  // The US store also searches Spanish (Mexico) metadata, so this is a second name, subtitle and
+  // keyword field for US searches (ASO guides disagree on the full list; "minify" is only here, to test
+  // whether the US store reads it). The app is in English, so the listing is too. No words repeated
+  // from en-US. Screenshots: none of its own, so the English ones show.
+  'es-MX': {
+    name: 'Shrink: Video Size Reducer',
+    subtitle: 'Compressor and photo cleaner',
+    keywords: 'outlook,slack,telegram,messenger,imessage,canvas,attachment,file,space,cleanup,trim,minify,converter',
+    promotionalText: 'Make any video or photo fit Discord, email, WhatsApp or any size limit, and free up iPhone storage. Everything stays on your iPhone. No ads, no weekly plans.',
+    description: DESCRIPTION,
+    supportUrl: SUPPORT_URL,
+    marketingUrl: SUPPORT_URL,
+    privacyPolicyUrl: PRIVACY_URL,
+  },
+}
+
+// "What's New" for each version after the first (Apple refuses it on a first version).
+export const RELEASE_NOTES = {
+  '1.0.1': 'A clearer privacy policy: it now says how long problem reports are kept (12 months) and how to have yours deleted.',
 }
 
 // No objectionable content, no chat, no user content, no web browsing: 4+.
